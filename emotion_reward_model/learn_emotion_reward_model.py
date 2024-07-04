@@ -14,6 +14,7 @@ from datetime import datetime
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 import wandb
+from scipy.spatial.distance import cosine
 
 # Slack通知の設定
 with open("/workspace/Emotion_Intent_Chat/emo_int_chat/intent_reward_model/slack_API.txt", 'r') as f:
@@ -42,59 +43,61 @@ def main():
         # 現在の日時を取得してフォーマット
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # empathetic intentの読み込み
-        df = pd.read_excel('/workspace/Emotion_Intent_Chat/empathetic_dialogues/empathetic_intent_jp_2nd.xlsx', sheet_name=None)
+        df_wrime = pd.read_table("/workspace/Emotion_Intent_Chat/wrime/wrime-ver1.tsv")
 
-        # 8つの発話意図のリスト
-        intent_names = ["questioning", "acknowledging", "consoling", "agreeing", "encouraging", "sympathizing", "suggesting", "wishing"]
+        # 8感情のリスト
+        emotion_names = ['Joy', 'Sadness', 'Anticipation', 'Surprise', 'Anger', 'Fear', 'Disgust', 'Trust']
+        emotion_names_jp = ['喜び', '悲しみ', '期待', '驚き', '怒り', '恐れ', '嫌悪', '信頼']
+        num_labels = len(emotion_names)
 
-        df_all = pd.DataFrame()
-        for sheet in df.keys():
-            df_all = pd.concat([df_all, df[sheet]])
+        df_wrime['readers_emotion_intensities'] = df_wrime.apply(lambda x: [x['Avg. Readers_' + name] for name in emotion_names], axis=1)
 
-        # Labelがintentで、Typeがutteranceの者だけに絞り込む
-        df_all = df_all[df_all["Label"].isin(intent_names)]
-        df_all = df_all[df_all["Type"] == "utterance"]
+        is_target = df_wrime['readers_emotion_intensities'].map(lambda x: max(x) >= 2)
+        df_wrime_target = df_wrime[is_target]
 
-        df_all = df_all.loc[:, ["テキスト", "Label"]]
-        df_all = df_all.rename(columns={"テキスト": "text", "Label": "label_str"})
-
-
-        # ラベルエンコーディング
-        le = LabelEncoder()
-        df_all["label"] = le.fit_transform(df_all["label_str"])
-        print(le.classes_)  # ここでラベルの対応関係が表示される
-
-        df_train, df_test = train_test_split(df_all, test_size=0.2)
+        # train / testに分割
+        df_groups = df_wrime_target.groupby('Train/Dev/Test')
+        df_train = df_groups.get_group('train')
+        df_test = pd.concat([df_groups.get_group('dev'), df_groups.get_group('test')])
 
         # モデル指定
         model_name = 'bert-base-japanese-v3'
         checkpoint = f'/workspace/Emotion_Intent_Chat/{model_name}'
         tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
+        # 前処理・感情強度の正規化(総和=1)
         def tokenize_function(batch):
-            tokenized_batch = tokenizer(batch['text'], truncation=True, padding="max_length")
+            tokenized_batch = tokenizer(batch['Sentence'], truncation=True, padding="max_length")
+            tokenized_batch['labels'] = [np.array(x) >= 2 for x in batch['readers_emotion_intensities']]
+            tokenized_batch['labels'] = np.array(tokenized_batch['labels']).astype(float)
             return tokenized_batch
 
-        train_dataset = Dataset.from_pandas(df_train)
-        test_dataset = Dataset.from_pandas(df_test)
+        # transformers用のデータセット形式に変換
+        target_columns = ['Sentence', 'readers_emotion_intensities']
+        train_dataset = Dataset.from_pandas(df_train[target_columns])
+        test_dataset = Dataset.from_pandas(df_test[target_columns])
 
+        # 前処理の適用
         train_tokenized_dataset = train_dataset.map(tokenize_function, batched=True)
         test_tokenized_dataset = test_dataset.map(tokenize_function, batched=True)
 
+        model = AutoModelForSequenceClassification.from_pretrained(checkpoint, num_labels=num_labels, problem_type="multi_label_classification")
 
-        num_labels = 8
-        model = AutoModelForSequenceClassification.from_pretrained(checkpoint, num_labels=num_labels)
+        # コサイン類似度の計算関数を定義
+        def cosine_similarity(a, b):
+            return 1 - cosine(a, b)
 
         # 評価指標を定義
-        metric = load_metric("accuracy")
-
         def compute_metrics(eval_pred):
             logits, labels = eval_pred
-            predictions = np.argmax(logits, axis=-1)
-            accuracy = metric.compute(predictions=predictions, references=labels)
-            wandb.log({"accuracy": accuracy['accuracy']})
-            return accuracy
+            sigmoid = torch.nn.Sigmoid()
+            probs = sigmoid(torch.tensor(logits))
+            probs = probs.detach().numpy()
+
+            cosine_similarities = [cosine_similarity(pred, true) for pred, true in zip(probs, labels)]
+            avg_cosine_similarity = np.mean(cosine_similarities)
+            wandb.log({"cosine_similarity": avg_cosine_similarity})
+            return {"cosine_similarity": avg_cosine_similarity}
 
         # 訓練時の設定
         output_dir = f'tuned_model/{current_time}_{model_name}'
@@ -111,7 +114,7 @@ def main():
         )
 
         # W&Bの初期化
-        wandb.init(project=f"intent_reward_model_{model_name}", config=training_args)
+        wandb.init(project=f"emotion_reward_model_{model_name}", config=training_args)
 
         # OptimizerとSchedulerの定義
         optimizer = AdamW(model.parameters(), lr=training_args.learning_rate)
@@ -153,7 +156,7 @@ def main():
         tokenizer.save_pretrained(output_dir)
 
         # ラベル情報をlabel_id.jsonに保存
-        label_mapping = {int(i): label for i, label in enumerate(le.classes_)}
+        label_mapping = {int(i): label for i, label in enumerate(emotion_names)}
         label_path = os.path.join(output_dir, "label_id.json")
         with open(label_path, "w") as f:
             json.dump(label_mapping, f, ensure_ascii=False, indent=4)

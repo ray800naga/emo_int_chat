@@ -165,3 +165,6 @@ intent_reward_model/tuned_model/
 intent_reward_model/wandb/
 intent_reward_model/slack*.txt
 intent_reward_model/*_API.txt
+
+emotion_reward_model/tuned_model/
+emotion_reward_model/wandb
