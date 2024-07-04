@@ -168,3 +168,5 @@ intent_reward_model/*_API.txt
 
 emotion_reward_model/tuned_model/
 emotion_reward_model/wandb
+
+*.png

@@ -29,7 +29,7 @@ sns.set_theme()
 tokenizer = AutoTokenizer.from_pretrained(f"/workspace/Emotion_Intent_Chat/emo_int_chat/emotion_reward_model/tuned_model/{model_name}")
 model = AutoModelForSequenceClassification.from_pretrained(f"/workspace/Emotion_Intent_Chat/emo_int_chat/emotion_reward_model/tuned_model/{model_name}/{checkpoint}/", num_labels=8)
 
-def output_graph(input_text: str):
+def output_graph(num: int, input_text: str):
     # 入力データの変換と推論
     tokens = tokenizer(input_text, truncation=True, return_tensors='pt')
     tokens = {key: value.to(model.device) for key, value in tokens.items()}
@@ -50,7 +50,7 @@ def output_graph(input_text: str):
     ax.set_xticklabels(label_names, rotation=45, ha='center', fontsize=10, fontproperties=font_prop)
     
     plt.tight_layout()  # レイアウトを調整して、ラベルが重ならないようにする
-    plt.savefig("output_graph.png")  # グラフを保存する
+    plt.savefig(f"Intent_{num}_{input_text}.png")  # グラフを保存する
     plt.show()
 
 def np_softmax(x):
@@ -59,7 +59,41 @@ def np_softmax(x):
 
 def main():
     model.eval()
-    output_graph("この仕事を任せられるのは彼しかいない。")
+    # utterances = [
+    # "すごい！やっと目標達成できたね！",
+    # "今日のイベント、本当に楽しかった！",
+    # "あなたと一緒に過ごせることがとても嬉しいです。",
+    # "この知らせを聞いてとても悲しいです。",
+    # "本当に残念な結果で、心が痛みます。",
+    # "こんなに辛い経験をするなんて思ってもいなかった。",
+    # "次のプロジェクトがとても楽しみです。",
+    # "あなたの新しいアイデアに期待しています！",
+    # "来週の旅行が待ち遠しいです。",
+    # "えっ、本当にそうなの？",
+    # "まさかこんなことが起こるとは思わなかった！",
+    # "信じられない！こんな偶然があるなんて！",
+    # "どうしてそんなことをしたんですか？",
+    # "それは許せません！",
+    # "何度も言ったのに、まだ理解してないの？",
+    # "これからどうなるのか、とても不安です。",
+    # "あの場所には行きたくない、怖いんです。",
+    # "何か悪いことが起きるんじゃないかと心配です。",
+    # "そんな行動は見ていられない。",
+    # "あの食べ物はちょっと無理です。",
+    # "その態度には本当にがっかりしました。",
+    # "あなたならきっとやり遂げられると信じています。",
+    # "何があってもあなたを信じています。",
+    # "このプロジェクトはあなたに任せます。"
+    # ]
+    utterances =[
+        "今日はとても良い天気です。",
+        "最近とっても忙しくて、、",
+        "何回言ったらわかるのよ！いい加減にしてちょうだい！",
+        "警察が来ればもう安心だ",
+        "彼はとても頼りになる人です"
+    ] 
+    for i, input_text in enumerate(utterances):
+        output_graph(i, input_text)
 
 if __name__ == "__main__":
     import matplotlib
