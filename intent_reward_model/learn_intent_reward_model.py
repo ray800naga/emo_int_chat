@@ -15,6 +15,10 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 import wandb
 
+# モデル指定
+# model_name = 'bert-base-japanese-v3'
+model_name = 'bert-large-japanese-v2'
+
 # Slack通知の設定
 with open("/workspace/Emotion_Intent_Chat/emo_int_chat/intent_reward_model/slack_API.txt", 'r') as f:
     slack_token = f.read().strip()
@@ -67,8 +71,6 @@ def main():
 
         df_train, df_test = train_test_split(df_all, test_size=0.2)
 
-        # モデル指定
-        model_name = 'bert-base-japanese-v3'
         checkpoint = f'/workspace/Emotion_Intent_Chat/{model_name}'
         tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
@@ -101,12 +103,14 @@ def main():
         training_args = TrainingArguments(
             output_dir=output_dir,
             per_device_train_batch_size=8,
-            num_train_epochs=30,
+            num_train_epochs=50,
             evaluation_strategy="epoch",
             load_best_model_at_end=True,
             save_strategy='epoch',
             logging_strategy='epoch',
             learning_rate=5e-5,  # 初期の学習率を指定
+            lr_scheduler_type='linear',
+            warmup_ratio=0.1,
             report_to="wandb"  # Weight & Biasesへログを送信するように設定
         )
 
@@ -114,35 +118,35 @@ def main():
         wandb.init(project=f"intent_reward_model_{model_name}", config=training_args)
 
         # OptimizerとSchedulerの定義
-        optimizer = AdamW(model.parameters(), lr=training_args.learning_rate)
+        # optimizer = AdamW(model.parameters(), lr=training_args.learning_rate)
 
         # ReduceLROnPlateauスケジューラの定義
-        scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=1, verbose=True)
+        # scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=1, verbose=True)
 
-        class CustomTrainer(Trainer):
-            def create_optimizer_and_scheduler(self, num_training_steps):
-                self.optimizer = optimizer
-                self.lr_scheduler = scheduler
+        # class CustomTrainer(Trainer):
+        #     def create_optimizer_and_scheduler(self, num_training_steps):
+        #         self.optimizer = optimizer
+        #         self.lr_scheduler = scheduler
 
-            def evaluate(self, *args, **kwargs):
-                output = super().evaluate(*args, **kwargs)
-                # ReduceLROnPlateau needs the metric to be passed
-                self.lr_scheduler.step(output['eval_loss'])
-                wandb.log({"eval_loss": output['eval_loss']})
-                return output
+        #     def evaluate(self, *args, **kwargs):
+        #         output = super().evaluate(*args, **kwargs)
+        #         # ReduceLROnPlateau needs the metric to be passed
+        #         self.lr_scheduler.step(output['eval_loss'])
+        #         wandb.log({"eval_loss": output['eval_loss']})
+        #         return output
 
-            def training_step(self, model, inputs):
-                loss = super().training_step(model, inputs)
-                wandb.log({"loss": loss})
-                return loss
+        #     def training_step(self, model, inputs):
+        #         loss = super().training_step(model, inputs)
+        #         wandb.log({"loss": loss})
+        #         return loss
 
-        trainer = CustomTrainer(
+        trainer = Trainer(
             model=model,
             args=training_args,
             train_dataset=train_tokenized_dataset,
             eval_dataset=test_tokenized_dataset,
             compute_metrics=compute_metrics,
-            callbacks=[EarlyStoppingCallback(early_stopping_patience=5)]  # 5エポックの間改善がない場合に停止
+            # callbacks=[EarlyStoppingCallback(early_stopping_patience=5)]  # 5エポックの間改善がない場合に停止
         )
 
         # 学習実行
