@@ -103,19 +103,19 @@ def main():
         training_args = TrainingArguments(
             output_dir=output_dir,
             per_device_train_batch_size=8,
-            num_train_epochs=50,
+            num_train_epochs=20,
             evaluation_strategy="epoch",
             load_best_model_at_end=True,
             save_strategy='epoch',
             logging_strategy='epoch',
-            learning_rate=5e-5,  # 初期の学習率を指定
-            lr_scheduler_type='linear',
-            warmup_ratio=0.1,
+            learning_rate=2e-5,  # 初期の学習率を指定
+            lr_scheduler_type='reduce_lr_on_plateau',
+            warmup_ratio=0.05,
             report_to="wandb"  # Weight & Biasesへログを送信するように設定
         )
 
         # W&Bの初期化
-        wandb.init(project=f"intent_reward_model_{model_name}", config=training_args)
+        wandb.init(project=f"intent_reward_model_{model_name}", config=training_args, name=f"{current_time}_{model_name}")
 
         # OptimizerとSchedulerの定義
         # optimizer = AdamW(model.parameters(), lr=training_args.learning_rate)
