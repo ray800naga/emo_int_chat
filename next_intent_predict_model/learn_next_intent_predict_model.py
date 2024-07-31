@@ -49,8 +49,8 @@ def main(scheduler_name):
         # 現在の日時を取得してフォーマット
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # empathetic intentの読み込み
-        df = pd.read_excel('/workspace/Emotion_Intent_Chat/empathetic_dialogues/empathetic_intent_jp_2nd.xlsx', sheet_name=None)
+        # empathetic intent with next labelの読み込み
+        df = pd.read_excel('/workspace/Emotion_Intent_Chat/empathetic_dialogues/empathetic_intent_jp_next_label.xlsx', sheet_name=None)
 
         # 8つの発話意図のリスト
         intent_names = ["questioning", "acknowledging", "consoling", "agreeing", "encouraging", "sympathizing", "suggesting", "wishing"]
@@ -60,11 +60,11 @@ def main(scheduler_name):
             df_all = pd.concat([df_all, df[sheet]])
 
         # Labelがintentで、Typeがutteranceの者だけに絞り込む
-        df_all = df_all[df_all["Label"].isin(intent_names)]
+        df_all = df_all[df_all["Next_Label"].isin(intent_names)]
         df_all = df_all[df_all["Type"] == "utterance"]
 
-        df_all = df_all.loc[:, ["テキスト", "Label"]]
-        df_all = df_all.rename(columns={"テキスト": "text", "Label": "label_str"})
+        df_all = df_all.loc[:, ["テキスト", "Next_Label"]]
+        df_all = df_all.rename(columns={"テキスト": "text", "Next_Label": "label_str"})
 
         # # for debug
         # df_all = df_all[:100]
@@ -123,7 +123,7 @@ def main(scheduler_name):
         # wandb.init(project=f"intent_reward_model_{model_name}", config=training_args, name=f"intent_{current_time}_{model_name}")
 
         # for debug
-        wandb.init(project=f"new_intent_reward_model_{model_name}", config=training_args, name=f"intent_{current_time}_{model_name}_{scheduler_name}")
+        wandb.init(project=f"next_intent_prediction_model_{model_name}", config=training_args, name=f"intent_prediction_{current_time}_{model_name}_{scheduler_name}")
 
         # オプティマイザの設定
         optimizer = AdamW(model.parameters(), lr=training_args.learning_rate)
@@ -164,7 +164,7 @@ def main(scheduler_name):
         print(label_mapping)
         
         wandb.finish()
-        send_slack_message(f"Training completed successfully. \r{output_dir}")
+        send_slack_message(f"Training completed successfully. \r{output_dir} \rintent_prediction_{current_time}_{model_name}_{scheduler_name}")
     except Exception as e:
         send_slack_message(f"Training failed with error: {str(e)}")
         raise
