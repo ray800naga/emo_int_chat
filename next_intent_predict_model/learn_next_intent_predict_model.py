@@ -19,8 +19,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'm
 from scheduler import my_get_scheduler
 
 # モデル指定
-model_name = 'bert-large-japanese-v2'
-# model_name = 'bert-base-japanese-v3'
+# model_name = 'bert-large-japanese-v2'
+model_name = 'bert-base-japanese-v3'
 
 # Slack通知の設定
 with open("/workspace/Emotion_Intent_Chat/emo_int_chat/intent_reward_model/slack_API.txt", 'r') as f:
