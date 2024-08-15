@@ -21,8 +21,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'm
 from scheduler import my_get_scheduler
 
 # モデル指定
-# model_name = 'bert-base-japanese-v3'
-model_name = 'bert-large-japanese-v2'
+model_name = 'bert-base-japanese-v3'
+# model_name = 'bert-large-japanese-v2'
 
 # Slack通知の設定
 with open("/workspace/Emotion_Intent_Chat/emo_int_chat/intent_reward_model/slack_API.txt", 'r') as f:
@@ -60,8 +60,9 @@ def main(scheduler_name):
 
         df_wrime['readers_emotion_intensities'] = df_wrime.apply(lambda x: [x['Avg. Readers_' + name] for name in emotion_names], axis=1)
 
-        is_target = df_wrime['readers_emotion_intensities'].map(lambda x: max(x) >= 2)
-        df_wrime_target = df_wrime[is_target]
+        # 2以上の強度を持つ文章のみを学習対象とする処理：現在は無効化
+        # is_target = df_wrime['readers_emotion_intensities'].map(lambda x: max(x) >= 2)
+        df_wrime_target = df_wrime
 
         # train / testに分割
         df_groups = df_wrime_target.groupby('Train/Dev/Test')
@@ -71,11 +72,10 @@ def main(scheduler_name):
         checkpoint = f'/workspace/Emotion_Intent_Chat/{model_name}'
         tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
-        # 前処理・感情強度の正規化(総和=1)
+        # token化、readers_emotion_intensitiesをlabelsとして扱う
         def tokenize_function(batch):
             tokenized_batch = tokenizer(batch['Sentence'], truncation=True, padding="max_length")
-            tokenized_batch['labels'] = [np.array(x) >= 2 for x in batch['readers_emotion_intensities']]
-            tokenized_batch['labels'] = np.array(tokenized_batch['labels']).astype(float)
+            tokenized_batch['labels'] = np.array(batch['readers_emotion_intensities']).astype(float)
             return tokenized_batch
 
         # transformers用のデータセット形式に変換
@@ -87,7 +87,7 @@ def main(scheduler_name):
         train_tokenized_dataset = train_dataset.map(tokenize_function, batched=True)
         test_tokenized_dataset = test_dataset.map(tokenize_function, batched=True)
 
-        model = AutoModelForSequenceClassification.from_pretrained(checkpoint, num_labels=num_labels, problem_type="multi_label_classification")
+        model = AutoModelForSequenceClassification.from_pretrained(checkpoint, num_labels=num_labels, problem_type="regression")
 
         # コサイン類似度の計算関数を定義
         def cosine_similarity(a, b):
@@ -96,8 +96,8 @@ def main(scheduler_name):
         # 評価指標を定義
         def compute_metrics(eval_pred):
             logits, labels = eval_pred
-            sigmoid = torch.nn.Sigmoid()
-            probs = sigmoid(torch.tensor(logits))
+            # sigmoid = torch.nn.Sigmoid()
+            probs = torch.tensor(logits)
             probs = probs.detach().numpy()
 
             cosine_similarities = [cosine_similarity(pred, true) for pred, true in zip(probs, labels)]
@@ -110,7 +110,7 @@ def main(scheduler_name):
         training_args = TrainingArguments(
             output_dir=output_dir,
             per_device_train_batch_size=8,
-            num_train_epochs=30,
+            num_train_epochs=15,
             evaluation_strategy="epoch",
             load_best_model_at_end=True,
             save_strategy='epoch',
@@ -121,7 +121,7 @@ def main(scheduler_name):
         )
 
         # W&Bの初期化
-        wandb.init(project=f"new_emotion_reward_model_{model_name}", config=training_args, name=f"{current_time}_{model_name}_{scheduler_name}")
+        wandb.init(project=f"original_intensity_emotion_reward_model_{model_name}", config=training_args, name=f"{current_time}_{model_name}_{scheduler_name}")
 
         # オプティマイザの設定
         optimizer = AdamW(model.parameters(), lr=training_args.learning_rate)
