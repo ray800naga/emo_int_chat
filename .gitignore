@@ -170,3 +170,7 @@ emotion_reward_model/tuned_model/
 emotion_reward_model/wandb
 
 *.png
+
+lora_tuning/tuned_model/
+lora_tuning/test_tuned_model/
+lora_tuning/wandb/
