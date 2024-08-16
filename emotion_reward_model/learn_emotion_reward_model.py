@@ -58,10 +58,8 @@ def main(scheduler_name):
         emotion_names_jp = ['喜び', '悲しみ', '期待', '驚き', '怒り', '恐れ', '嫌悪', '信頼']
         num_labels = len(emotion_names)
 
-        df_wrime['readers_emotion_intensities'] = df_wrime.apply(lambda x: [x['Avg. Readers_' + name] for name in emotion_names], axis=1)
+        df_wrime['writer_emotion_intensities'] = df_wrime.apply(lambda x: [x['Writer_' + name] for name in emotion_names], axis=1)
 
-        # 2以上の強度を持つ文章のみを学習対象とする処理：現在は無効化
-        # is_target = df_wrime['readers_emotion_intensities'].map(lambda x: max(x) >= 2)
         df_wrime_target = df_wrime
 
         # train / testに分割
@@ -69,17 +67,21 @@ def main(scheduler_name):
         df_train = df_groups.get_group('train')
         df_test = pd.concat([df_groups.get_group('dev'), df_groups.get_group('test')])
 
+        # for debug
+        # df_train = df_train[:100]
+        # df_test = df_test[:20]
+
         checkpoint = f'/workspace/Emotion_Intent_Chat/{model_name}'
         tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
-        # token化、readers_emotion_intensitiesをlabelsとして扱う
+        # token化、writer_emotion_intensitiesをlabelsとして扱う
         def tokenize_function(batch):
             tokenized_batch = tokenizer(batch['Sentence'], truncation=True, padding="max_length")
-            tokenized_batch['labels'] = np.array(batch['readers_emotion_intensities']).astype(float)
+            tokenized_batch['labels'] = np.array(batch['writer_emotion_intensities']).astype(float)
             return tokenized_batch
 
         # transformers用のデータセット形式に変換
-        target_columns = ['Sentence', 'readers_emotion_intensities']
+        target_columns = ['Sentence', 'writer_emotion_intensities']
         train_dataset = Dataset.from_pandas(df_train[target_columns])
         test_dataset = Dataset.from_pandas(df_test[target_columns])
 
@@ -96,8 +98,8 @@ def main(scheduler_name):
         # 評価指標を定義
         def compute_metrics(eval_pred):
             logits, labels = eval_pred
-            # sigmoid = torch.nn.Sigmoid()
-            probs = torch.tensor(logits)
+            sigmoid = torch.nn.Sigmoid()
+            probs = sigmoid(torch.tensor(logits))
             probs = probs.detach().numpy()
 
             cosine_similarities = [cosine_similarity(pred, true) for pred, true in zip(probs, labels)]
@@ -109,7 +111,7 @@ def main(scheduler_name):
         output_dir = f'tuned_model/{current_time}_{model_name}_{scheduler_name}'
         training_args = TrainingArguments(
             output_dir=output_dir,
-            per_device_train_batch_size=8,
+            per_device_train_batch_size=16,
             num_train_epochs=15,
             evaluation_strategy="epoch",
             load_best_model_at_end=True,
@@ -121,7 +123,7 @@ def main(scheduler_name):
         )
 
         # W&Bの初期化
-        wandb.init(project=f"original_intensity_emotion_reward_model_{model_name}", config=training_args, name=f"{current_time}_{model_name}_{scheduler_name}")
+        wandb.init(project=f"writer_intensity_emotion_reward_model_{model_name}", config=training_args, name=f"{current_time}_{model_name}_{scheduler_name}")
 
         # オプティマイザの設定
         optimizer = AdamW(model.parameters(), lr=training_args.learning_rate)
