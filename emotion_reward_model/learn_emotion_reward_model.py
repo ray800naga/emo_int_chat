@@ -60,7 +60,10 @@ def main(scheduler_name):
 
         df_wrime['writer_emotion_intensities'] = df_wrime.apply(lambda x: [x['Writer_' + name] for name in emotion_names], axis=1)
 
-        df_wrime_target = df_wrime
+        df_wrime_target = df_wrime[df_wrime['writer_emotion_intensities'].apply(lambda x: x != [0,0,0,0,0,0,0,0])]
+
+        # for debug
+        print(f"df_wrime: {len(df_wrime)}, df_wrime_target: {len(df_wrime_target)}")
 
         # train / testに分割
         df_groups = df_wrime_target.groupby('Train/Dev/Test')
@@ -98,8 +101,9 @@ def main(scheduler_name):
         # 評価指標を定義
         def compute_metrics(eval_pred):
             logits, labels = eval_pred
-            sigmoid = torch.nn.Sigmoid()
-            probs = sigmoid(torch.tensor(logits))
+            # sigmoid = torch.nn.Sigmoid()
+            # probs = sigmoid(torch.tensor(logits))
+            probs = torch.tensor(logits)
             probs = probs.detach().numpy()
 
             cosine_similarities = [cosine_similarity(pred, true) for pred, true in zip(probs, labels)]
@@ -123,7 +127,7 @@ def main(scheduler_name):
         )
 
         # W&Bの初期化
-        wandb.init(project=f"writer_intensity_emotion_reward_model_{model_name}", config=training_args, name=f"{current_time}_{model_name}_{scheduler_name}")
+        wandb.init(project=f"cos_sim_fixed_writer_intensity_emotion_reward_model_{model_name}", config=training_args, name=f"{current_time}_{model_name}_{scheduler_name}")
 
         # オプティマイザの設定
         optimizer = AdamW(model.parameters(), lr=training_args.learning_rate)
