@@ -5,18 +5,17 @@ import pandas as pd
 
 tqdm.pandas()
 
-from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM, AutoModelForSeq2SeqLM
+from transformers import pipeline, AutoTokenizer, BitsAndBytesConfig
 from datasets import load_dataset
 
-from trl import PPOTrainer, PPOConfig, AutoModelForCausalLMWithValueHead
-from trl.core import LengthSampler
+from trl import PPOTrainer, PPOConfig, AutoModelForCausalLMWithValueHead, create_reference_model
 
 import os
 
 import wandb
 from datetime import datetime
 
-from peft import get_peft_config, get_peft_model, LoraConfig, TaskType
+from peft import LoraConfig, TaskType
 
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
@@ -73,7 +72,7 @@ def main(emotion):
 		config = PPOConfig(
 			model_name="/workspace/Emotion_Intent_Chat/calm2-7b",
 			learning_rate=1.41e-5,
-			log_with="wandb"
+			log_with="wandb",
 		)
 
 		sent_kwargs = {"top_k": None, "function_to_apply": "none", "batch_size": 16}
@@ -85,23 +84,21 @@ def main(emotion):
 
 
 		peft_config = LoraConfig(
-			task_type=TaskType.CAUSAL_LM, inference_mode=False, r=8, lora_alpha=32, lora_dropout=0.1
+			task_type=TaskType.CAUSAL_LM, inference_mode=False, r=8, lora_alpha=16, lora_dropout=0.1
 		)
 
 
 		# Load LLM models
-		lora_model = AutoModelForCausalLMWithValueHead.from_pretrained(config.model_name, low_cpu_mem_usage=True, device_map="auto", peft_config=peft_config)
-		# base_model = AutoModelForSeq2SeqLM.from_pretrained(config.model_name, low_cpu_mem_usage=True, device_map="auto")
-		ref_model = AutoModelForCausalLMWithValueHead.from_pretrained(config.model_name, low_cpu_mem_usage=True, device_map="auto")
-		# lora_model = get_peft_model(base_model, peft_config)
+		lora_model = AutoModelForCausalLMWithValueHead.from_pretrained(config.model_name, device_map="auto", peft_config=peft_config)
+
 
 		tokenizer = AutoTokenizer.from_pretrained(config.model_name)
 
 		tokenizer.pad_token = tokenizer.pad_token
 
 
-		# initialize PPOTrainer
-		ppo_trainer = PPOTrainer(config, lora_model, ref_model, tokenizer, dataset=dataset, data_collator=collator)
+		# initialize PPOTrainer (set ref_model as None)
+		ppo_trainer = PPOTrainer(config, lora_model, None, tokenizer, dataset=dataset, data_collator=collator)
 
 
 		device = ppo_trainer.accelerator.device
@@ -110,9 +107,8 @@ def main(emotion):
 
 
 
-		emotion_pipe = pipeline("text-classification", model="/workspace/Emotion_Intent_Chat/emo_int_chat/emotion_reward_model/tuned_model/20240801_044013_bert-base-japanese-v3_cosine_with_restarts/checkpoint-9621", device=device)
+		emotion_pipe = pipeline("text-classification", model="/workspace/Emotion_Intent_Chat/emo_int_chat/emotion_reward_model/tuned_model/20240817_204322_bert-base-japanese-v3_reduce_lr_on_plateau/checkpoint-4886", device=device)
 
-		gen_kwargs = {"min_length": 0, "top_k": 500, "top_p": 0.95, "do_sample": True, "pad_token_id": tokenizer.eos_token_id}
 
 		emotion_dict = {
 			"Joy": 0,
@@ -130,13 +126,11 @@ def main(emotion):
 
 		generation_kwargs = {
 			"min_length": -1,
-			# "min_length": 0,
-			"top_k": 500,
-			"top_p": 0.95,
+			"top_k": 0.0,
+			"top_p": 1.0,
 			"do_sample": True,
-			"pad_token_id": tokenizer.pad_token_id,
-			# "pad_token_id": tokenizer.eos_token_id,
-			"temperature": 1
+			"pad_token_id": tokenizer.eos_token_id,
+			"max_new_tokens": 32
 		}
 
 
@@ -146,12 +140,8 @@ def main(emotion):
 			#### Get response from calm
 			response_tensors = []
 			for query in query_tensors:
-				# gen_len = output_length_sampler()
-				gen_len = 20
-				generation_kwargs["max_new_tokens"] = gen_len
 				response = ppo_trainer.generate(query, **generation_kwargs)
-				if len(response.squeeze()) < gen_len:
-					gen_len = len(response.squeeze())
+				gen_len = len(response.squeeze())
 				response_tensors.append(response.squeeze()[-gen_len:])
 			batch["response"] = [tokenizer.decode(r.squeeze()) for r in response_tensors]
 
@@ -165,49 +155,49 @@ def main(emotion):
 			ppo_trainer.log_stats(stats, batch, rewards)
 
 
-		#### get a batch from the dataset
-		bs = 32
-		game_data = dict()
-		dataset.set_format("pandas")
-		df_batch = dataset[:].sample(bs)
-		game_data["query"] = df_batch["query"].tolist()
-		query_tensors = df_batch["input_ids"].tolist()
+		# #### get a batch from the dataset
+		# bs = 32
+		# game_data = dict()
+		# dataset.set_format("pandas")
+		# df_batch = dataset[:].sample(bs)
+		# game_data["query"] = df_batch["query"].tolist()
+		# query_tensors = df_batch["input_ids"].tolist()
 
-		response_tensors_ref, response_tensors = [], []
+		# response_tensors_ref, response_tensors = [], []
 
-		#### get response from gpt2 and gpt2_ref
-		for i in range(bs):
-			# gen_len = output_length_sampler()
-			gen_len = 20
-			output = ref_model.generate(
-				torch.tensor(query_tensors[i]).unsqueeze(dim=0).to(device), max_new_tokens=gen_len, **gen_kwargs
-			).squeeze()[-gen_len:]
-			response_tensors_ref.append(output)
-			output = lora_model.generate(
-				torch.tensor(query_tensors[i]).unsqueeze(dim=0).to(device), max_new_tokens=gen_len, **gen_kwargs
-			).squeeze()[-gen_len:]
-			response_tensors.append(output)
+		# #### get response from gpt2 and gpt2_ref
+		# for i in range(bs):
+		# 	# gen_len = output_length_sampler()
+		# 	gen_len = 20
+		# 	output = ref_model.generate(
+		# 		torch.tensor(query_tensors[i]).unsqueeze(dim=0).to(device), max_new_tokens=gen_len, **gen_kwargs
+		# 	).squeeze()[-gen_len:]
+		# 	response_tensors_ref.append(output)
+		# 	output = lora_model.generate(
+		# 		torch.tensor(query_tensors[i]).unsqueeze(dim=0).to(device), max_new_tokens=gen_len, **gen_kwargs
+		# 	).squeeze()[-gen_len:]
+		# 	response_tensors.append(output)
 
-		#### decode responses
-		game_data["response (before)"] = [tokenizer.decode(response_tensors_ref[i]) for i in range(bs)]
-		game_data["response (after)"] = [tokenizer.decode(response_tensors[i]) for i in range(bs)]
+		# #### decode responses
+		# game_data["response (before)"] = [tokenizer.decode(response_tensors_ref[i]) for i in range(bs)]
+		# game_data["response (after)"] = [tokenizer.decode(response_tensors[i]) for i in range(bs)]
 
-		#### sentiment analysis of query/response pairs before/after
-		texts = [q + r for q, r in zip(game_data["query"], game_data["response (before)"])]
-		game_data["rewards (before)"] = [output[emotion_id]["score"] for output in emotion_pipe(texts, **sent_kwargs)]
+		# #### sentiment analysis of query/response pairs before/after
+		# texts = [q + r for q, r in zip(game_data["query"], game_data["response (before)"])]
+		# game_data["rewards (before)"] = [output[emotion_id]["score"] for output in emotion_pipe(texts, **sent_kwargs)]
 
-		texts = [q + r for q, r in zip(game_data["query"], game_data["response (after)"])]
-		game_data["rewards (after)"] = [output[emotion_id]["score"] for output in emotion_pipe(texts, **sent_kwargs)]
+		# texts = [q + r for q, r in zip(game_data["query"], game_data["response (after)"])]
+		# game_data["rewards (after)"] = [output[emotion_id]["score"] for output in emotion_pipe(texts, **sent_kwargs)]
 
-		# store results in a dataframe
-		df_results = pd.DataFrame(game_data)
+		# # store results in a dataframe
+		# df_results = pd.DataFrame(game_data)
 
 
-		print("mean:")
-		print(df_results[["rewards (before)", "rewards (after)"]].mean())
-		print()
-		print("median:")
-		print(df_results[["rewards (before)", "rewards (after)"]].median())
+		# print("mean:")
+		# print(df_results[["rewards (before)", "rewards (after)"]].mean())
+		# print()
+		# print("median:")
+		# print(df_results[["rewards (before)", "rewards (after)"]].median())
 
 
 
@@ -221,14 +211,14 @@ def main(emotion):
 		send_slack_message(f"Training completed succesfully. \r{save_dir}")
 
 		del(lora_model)
-		del(ref_model)
 		torch.cuda.empty_cache()
 	except Exception as e:
 		send_slack_message(f"Training failed with error: {str(e)}")
+		wandb.finish()
 
 
 if __name__ == "__main__":
 	emotion_list = ['Joy', 'Sadness', 'Anticipation', 'Surprise', 'Anger', 'Fear', 'Disgust', 'Trust']
-	for emotion in emotion_list:
+	for emotion in emotion_list[:]:
 		main(emotion)
 	send_slack_message("All training completed succesfully. (emotion lora)")
