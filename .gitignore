@@ -177,3 +177,6 @@ lora_tuning/wandb/
 
 next_intent_predict_model/tuned_model/
 next_intent_predict_model/wandb/
+
+intent_lora_tuning/tuned_model/
+intent_lora_tuning/wandb

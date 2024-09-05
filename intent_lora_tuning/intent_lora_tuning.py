@@ -2,23 +2,17 @@
 import torch
 from tqdm import tqdm
 import pandas as pd
-
 tqdm.pandas()
-
-from transformers import pipeline, AutoTokenizer, BitsAndBytesConfig
+from transformers import pipeline, AutoTokenizer
 from datasets import load_dataset
-
-from trl import PPOTrainer, PPOConfig, AutoModelForCausalLMWithValueHead, create_reference_model
-
+from trl import PPOTrainer, PPOConfig, AutoModelForCausalLMWithValueHead
 import os
-
 import wandb
 from datetime import datetime
-
 from peft import LoraConfig, TaskType
-
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
+import json
 
 # Slack通知の設定
 with open("/workspace/Emotion_Intent_Chat/emo_int_chat/intent_reward_model/slack_API.txt", 'r') as f:
@@ -67,7 +61,7 @@ def build_dataset(config, dataset_name="shunk031/wrime", ver="ver1", input_min_t
 def collator(data):
 	return dict((key, [d[key] for d in data]) for key in data[0])
 
-def main(emotion):
+def main(intent):
 	try:
 		config = PPOConfig(
 			model_name="/workspace/Emotion_Intent_Chat/calm2-7b",
@@ -81,7 +75,7 @@ def main(emotion):
 		sent_kwargs = {"top_k": None, "function_to_apply": "none", "batch_size": 16}
 
 		current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-		wandb.init(project=f"test_emotion_lora_tuning", name=f"fix_response_concat_emotion_lora_{config.model_name.split('/')[-1]}_{current_time}_{emotion}")
+		wandb.init(project=f"test_intent_lora_tuning", name=f"intent_lora_{config.model_name.split('/')[-1]}_{current_time}_{intent}")
 
 		dataset = build_dataset(config)
 
@@ -90,16 +84,8 @@ def main(emotion):
 			task_type=TaskType.CAUSAL_LM, inference_mode=False, r=8, lora_alpha=16, lora_dropout=0.1
 		)
 
-		# # quatization parameters
-		# peft_quantization_kwargs = BitsAndBytesConfig(
-		# 	load_in_4bit=True,
-		# 	bnb_4bit_use_double_quant=True,
-		# 	bnb_4bit_quant_type="nf4",
-		# 	bnb_4bit_compute_dtype=torch.bfloat16,
-		# )
-
 		# Load LLM models
-		lora_model = AutoModelForCausalLMWithValueHead.from_pretrained(config.model_name, device_map="auto", peft_config=peft_config)
+		lora_model = AutoModelForCausalLMWithValueHead(config.model_name, device_map="auto", peft_config=peft_config)
 
 
 		tokenizer = AutoTokenizer.from_pretrained(config.model_name)
@@ -115,24 +101,28 @@ def main(emotion):
 		if ppo_trainer.accelerator.num_processes == 1:
 			device = 0 if torch.cuda.is_available() else "cpu"
 
+		reward_model_path = "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_reward_model/tuned_model/20240729_022849_bert-base-japanese-v3_reduce_lr_on_plateau/checkpoint-13674"
 
+		emotion_pipe = pipeline("text-classification", model=reward_model_path, device=device)
 
-		emotion_pipe = pipeline("text-classification", model="/workspace/Emotion_Intent_Chat/emo_int_chat/emotion_reward_model/tuned_model/20240817_204322_bert-base-japanese-v3_reduce_lr_on_plateau/checkpoint-4886", device=device)
+		with open(os.path.join(reward_model_path, "label_id.json"), mode='rt', encoding="utf-8") as f:
+			intent_dict = json.load(f)
 
+		# intent_dict = {
+		# 	"0": "acknowledging",
+		# 	"1": "agreeing",
+		# 	"2": "consoling",
+		# 	"3": "encouraging",
+		# 	"4": "questioning",
+		# 	"5": "suggesting",
+		# 	"6": "sympathizing",
+		# 	"7": "wishing"
+		# }
 
-		emotion_dict = {
-			"Joy": 0,
-			"Sadness": 1,
-			"Anticipation": 2,
-			"Surprise": 3,
-			"Anger": 4,
-			"Fear": 5,
-			"Disgust": 6,
-			"Trust": 7
-		}
-
-		emotion_id = emotion_dict[emotion]
-
+		for k, v in intent_dict.items():
+			if v == intent:
+				intent_id = int(k)
+				break
 
 		generation_kwargs = {
 			"min_length": -1,
@@ -158,7 +148,7 @@ def main(emotion):
 			#### Compute sentiment score
 			texts = batch["response"]
 			pipe_outputs = emotion_pipe(texts, **sent_kwargs)
-			rewards = [torch.tensor(output[emotion_id]["score"]) for output in pipe_outputs]
+			rewards = [torch.tensor(output[intent_id]["score"]) for output in pipe_outputs]
 
 			#### Run PPO step
 			stats = ppo_trainer.step(query_tensors, response_tensors, rewards)
@@ -194,10 +184,10 @@ def main(emotion):
 
 		# #### sentiment analysis of query/response pairs before/after
 		# texts = [q + r for q, r in zip(game_data["query"], game_data["response (before)"])]
-		# game_data["rewards (before)"] = [output[emotion_id]["score"] for output in emotion_pipe(texts, **sent_kwargs)]
+		# game_data["rewards (before)"] = [output[intent_id]["score"] for output in emotion_pipe(texts, **sent_kwargs)]
 
 		# texts = [q + r for q, r in zip(game_data["query"], game_data["response (after)"])]
-		# game_data["rewards (after)"] = [output[emotion_id]["score"] for output in emotion_pipe(texts, **sent_kwargs)]
+		# game_data["rewards (after)"] = [output[intent_id]["score"] for output in emotion_pipe(texts, **sent_kwargs)]
 
 		# # store results in a dataframe
 		# df_results = pd.DataFrame(game_data)
@@ -211,7 +201,7 @@ def main(emotion):
 
 
 
-		save_dir = f"/workspace/Emotion_Intent_Chat/emo_int_chat/lora_tuning/tuned_model/emotion_lora_{config.model_name.split('/')[-1]}_{current_time}_{emotion}"
+		save_dir = f"/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/intent_lora_{config.model_name.split('/')[-1]}_{current_time}_{intent}"
 		os.makedirs(save_dir, exist_ok=True)
 
 		lora_model.save_pretrained(save_dir, push_to_hub=False)
@@ -224,15 +214,15 @@ def main(emotion):
 		del ppo_trainer
 		torch.cuda.empty_cache()
 	except Exception as e:
-		send_slack_message(f"Training failed with error: {str(e)}")
 		wandb.finish()
+		send_slack_message(f"Training failed with error: {str(e)}")
 		del lora_model
 		del ppo_trainer
 		torch.cuda.empty_cache()
 
 
 if __name__ == "__main__":
-	emotion_list = ['Joy', 'Sadness', 'Anticipation', 'Surprise', 'Anger', 'Fear', 'Disgust', 'Trust']
-	for emotion in emotion_list[:]:
-		main(emotion)
-	send_slack_message("All training completed succesfully. (emotion lora)")
+	intent_list = ["acknowledging", "agreeing", "consoling", "encouraging", "questioning", "suggesting", "sympathizing", "wishing"]
+	for intent in intent_list[:]:
+		main(intent)
+	send_slack_message("All training completed succesfully. (intent lora)")
