@@ -211,7 +211,7 @@ def main(emotion):
 
 
 
-		save_dir = f"/workspace/Emotion_Intent_Chat/emo_int_chat/lora_tuning/tuned_model/emotion_lora_{config.model_name.split('/')[-1]}_{current_time}_{emotion}"
+		save_dir = f"/workspace/Emotion_Intent_Chat/emo_int_chat/emotion_lora_tuning/tuned_model/emotion_lora_{config.model_name.split('/')[-1]}_{current_time}_{emotion}"
 		os.makedirs(save_dir, exist_ok=True)
 
 		lora_model.save_pretrained(save_dir, push_to_hub=False)
