@@ -15,6 +15,11 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 import json
 
+# random seed の設定
+seed = 0
+
+torch.manual_seed(seed)
+
 # Slack通知の設定
 with open(
     "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_reward_model/slack_API.txt", "r"
@@ -45,12 +50,14 @@ def build_dataset(config):
     tokenizer.pad_token = tokenizer.eos_token
     # pickleの読み込み
     with open(
-        "/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue.pkl",
+        # "/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue.pkl",
+        "/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue_1turn.pkl",
         "rb",
     ) as f:
         conversation_list = pickle.load(f)
     dic = {"input_ids": [], "query": []}
     for conversation in tqdm(conversation_list):
+        conversation.insert(0, {"role": "system", "content": "ユーザの発話に対して共感し、寄り添うような返答を日本語でしてください。その際、一言から二言程度で短く端的に答えてください。"})
         encoded = tokenizer.apply_chat_template(conversation)
         decoded = tokenizer.decode(encoded)
         dic["input_ids"].append(encoded)
@@ -58,11 +65,11 @@ def build_dataset(config):
     df = pd.DataFrame(dic)
     ds = Dataset.from_pandas(df)
     ds.set_format(type="torch")
-    with open(
-        "/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue_Dataset.pkl",
-        "wb",
-    ) as f:
-        pickle.dump(ds, f)
+    # with open(
+    #     "/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue_Dataset.pkl",
+    #     "wb",
+    # ) as f:
+    #     pickle.dump(ds, f)
     return ds
 
 
@@ -77,16 +84,16 @@ def main(intent):
             learning_rate=1.41e-5,
             log_with="wandb",
             batch_size=8,
-            mini_batch_size=8,
-            gradient_accumulation_steps=1,
+            mini_batch_size=2,
+            gradient_accumulation_steps=4,
         )
 
         sent_kwargs = {"top_k": None, "function_to_apply": "none", "batch_size": 16}
 
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
         wandb.init(
-            project=f"intent_lora_tuning",
-            name=f"intent_lora_{config.model_name.split('/')[-1]}_{current_time}_{intent}",
+            project=f"4090_intent_lora_tuning",
+            name=f"intent_lora_{config.model_name.split('/')[-1]}_{current_time}_{intent}_4bit",
         )
 
         dataset = build_dataset(config)
@@ -101,6 +108,7 @@ def main(intent):
 
         # Load LLM models
         lora_model = AutoModelForCausalLMWithValueHead.from_pretrained(
+            # config.model_name, device_map="auto", peft_config=peft_config, load_in_4bit=True
             config.model_name, device_map="auto", peft_config=peft_config
         )
 
@@ -130,17 +138,6 @@ def main(intent):
         ) as f:
             intent_dict = json.load(f)
 
-        # intent_dict = {
-        # 	"0": "acknowledging",
-        # 	"1": "agreeing",
-        # 	"2": "consoling",
-        # 	"3": "encouraging",
-        # 	"4": "questioning",
-        # 	"5": "suggesting",
-        # 	"6": "sympathizing",
-        # 	"7": "wishing"
-        # }
-
         for k, v in intent_dict.items():
             if v == intent:
                 intent_id = int(k)
@@ -149,13 +146,13 @@ def main(intent):
         generation_kwargs = {
             "min_length": -1,
             "top_k": 0.0,
-            "top_p": 1.0,
+            "top_p": 0.9,
             "do_sample": True,
             "pad_token_id": tokenizer.eos_token_id,
             "max_new_tokens": 128,
         }
 
-        for epoch, batch in tqdm(enumerate(ppo_trainer.dataloader)):
+        for batch in tqdm(ppo_trainer.dataloader):
             query_tensors = batch["input_ids"]
 
             #### Get response from llm
@@ -172,9 +169,13 @@ def main(intent):
             #### Compute sentiment score
             texts = batch["response"]
             pipe_outputs = emotion_pipe(texts, **sent_kwargs)
-            rewards = [
-                torch.tensor(output[intent_id]["score"]) for output in pipe_outputs
-            ]
+            rewards = []
+            for output in pipe_outputs:
+                for label_score in output:
+                    if label_score["label"] == intent:
+                        rewards.append(label_score["score"])
+                        break
+            
 
             #### Run PPO step
             stats = ppo_trainer.step(query_tensors, response_tensors, rewards)

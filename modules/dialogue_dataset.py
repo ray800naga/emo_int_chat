@@ -41,9 +41,14 @@ for df_n in [df_1, df_3]:
     conversation_lists.append(conversation_list)
 
 conversation_list_full = conversation_lists[0] + conversation_lists[1]
-# print(conversation_list_full)
+print(conversation_list_full)
 # 結果を確認
-# print(conversation_list[:5])  # 最初の5要素を確認
+print("full")
+print(conversation_list_full[:5])  # 最初の5要素を確認
+print("1 turn")
+print(conversation_lists[0][:5])  # 最初の5要素を確認
+print("3 turns")
+print(conversation_lists[1][:5])  # 最初の5要素を確認
 
 # すべて4件の会話かどうかを確認 -> True
 # print("start output")
@@ -52,7 +57,13 @@ conversation_list_full = conversation_lists[0] + conversation_lists[1]
 #         print(i)
 # print("end output")
 
-with open('/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue.pkl', 'wb') as f:
-    pickle.dump(conversation_list_full, f)
+# with open('/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue.pkl', 'wb') as f:
+#     pickle.dump(conversation_list_full, f)
+
+with open('/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue_1turn.pkl', 'wb') as f:
+    pickle.dump(conversation_lists[0], f)
+
+with open('/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue_3turn.pkl', 'wb') as f:
+    pickle.dump(conversation_lists[1], f)
     
 print("pkl file was saved.")
