@@ -93,7 +93,7 @@ def main(intent):
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
         wandb.init(
             project=f"4090_intent_lora_tuning",
-            name=f"intent_lora_{config.model_name.split('/')[-1]}_{current_time}_{intent}_4bit",
+            name=f"intent_lora_{config.model_name.split('/')[-1]}_{current_time}_{intent}",
         )
 
         dataset = build_dataset(config)
