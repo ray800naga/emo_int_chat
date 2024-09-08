@@ -75,7 +75,7 @@ def main(intent):
 		sent_kwargs = {"top_k": None, "function_to_apply": "none", "batch_size": 16}
 
 		current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-		wandb.init(project=f"test_intent_lora_tuning", name=f"intent_lora_{config.model_name.split('/')[-1]}_{current_time}_{intent}")
+		# wandb.init(project=f"test_intent_lora_tuning", name=f"intent_lora_{config.model_name.split('/')[-1]}_{current_time}_{intent}")
 
 		dataset = build_dataset(config)
 
@@ -85,7 +85,7 @@ def main(intent):
 		)
 
 		# Load LLM models
-		lora_model = AutoModelForCausalLMWithValueHead(config.model_name, device_map="auto", peft_config=peft_config)
+		lora_model = AutoModelForCausalLMWithValueHead.from_pretrained(config.model_name, device_map="auto", peft_config=peft_config)
 
 
 		tokenizer = AutoTokenizer.from_pretrained(config.model_name)

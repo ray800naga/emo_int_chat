@@ -4,14 +4,9 @@ import pandas as pd
 import pickle
 
 tqdm.pandas()
-from transformers import pipeline, AutoTokenizer, BitsAndBytesConfig
+from transformers import pipeline, AutoTokenizer
 from datasets import load_dataset, Dataset
-from trl import (
-    PPOTrainer,
-    PPOConfig,
-    AutoModelForCausalLMWithValueHead,
-    create_reference_model,
-)
+from trl import PPOTrainer, PPOConfig, AutoModelForCausalLMWithValueHead
 import os
 import wandb
 from datetime import datetime
@@ -75,21 +70,24 @@ def collator(data):
     return dict((key, [d[key] for d in data]) for key in data[0])
 
 
-def main(emotion):
+def main(intent):
     try:
         config = PPOConfig(
-            model_name="/workspace/Emotion_Intent_Chat/calm2-7b",
+            model_name="/workspace/Emotion_Intent_Chat/Swallow-7b-instruct-v0.1",
             learning_rate=1.41e-5,
             log_with="wandb",
-            batch_size=32,
-            mini_batch_size=32,
+            batch_size=8,
+            mini_batch_size=8,
             gradient_accumulation_steps=1,
         )
 
         sent_kwargs = {"top_k": None, "function_to_apply": "none", "batch_size": 16}
 
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-        # wandb.init(project=f"test_emotion_lora_tuning", name=f"fix_response_concat_emotion_lora_{config.model_name.split('/')[-1]}_{current_time}_{emotion}")
+        wandb.init(
+            project=f"intent_lora_tuning",
+            name=f"intent_lora_{config.model_name.split('/')[-1]}_{current_time}_{intent}",
+        )
 
         dataset = build_dataset(config)
 
@@ -101,14 +99,6 @@ def main(emotion):
             lora_dropout=0.1,
         )
 
-        # # quatization parameters
-        # peft_quantization_kwargs = BitsAndBytesConfig(
-        # 	load_in_4bit=True,
-        # 	bnb_4bit_use_double_quant=True,
-        # 	bnb_4bit_quant_type="nf4",
-        # 	bnb_4bit_compute_dtype=torch.bfloat16,
-        # )
-
         # Load LLM models
         lora_model = AutoModelForCausalLMWithValueHead.from_pretrained(
             config.model_name, device_map="auto", peft_config=peft_config
@@ -116,7 +106,7 @@ def main(emotion):
 
         tokenizer = AutoTokenizer.from_pretrained(config.model_name)
 
-        tokenizer.pad_token = tokenizer.pad_token
+        tokenizer.pad_token = tokenizer.eos_token
 
         # initialize PPOTrainer (set ref_model as None)
         ppo_trainer = PPOTrainer(
@@ -127,24 +117,34 @@ def main(emotion):
         if ppo_trainer.accelerator.num_processes == 1:
             device = 0 if torch.cuda.is_available() else "cpu"
 
+        reward_model_path = "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_reward_model/tuned_model/20240729_022849_bert-base-japanese-v3_reduce_lr_on_plateau/checkpoint-13674"
+
         emotion_pipe = pipeline(
-            "text-classification",
-            model="/workspace/Emotion_Intent_Chat/emo_int_chat/emotion_reward_model/tuned_model/20240817_204322_bert-base-japanese-v3_reduce_lr_on_plateau/checkpoint-4886",
-            device=device,
+            "text-classification", model=reward_model_path, device=device
         )
 
-        emotion_dict = {
-            "Joy": 0,
-            "Sadness": 1,
-            "Anticipation": 2,
-            "Surprise": 3,
-            "Anger": 4,
-            "Fear": 5,
-            "Disgust": 6,
-            "Trust": 7,
-        }
+        with open(
+            os.path.join(reward_model_path, "label_id.json"),
+            mode="rt",
+            encoding="utf-8",
+        ) as f:
+            intent_dict = json.load(f)
 
-        emotion_id = emotion_dict[emotion]
+        # intent_dict = {
+        # 	"0": "acknowledging",
+        # 	"1": "agreeing",
+        # 	"2": "consoling",
+        # 	"3": "encouraging",
+        # 	"4": "questioning",
+        # 	"5": "suggesting",
+        # 	"6": "sympathizing",
+        # 	"7": "wishing"
+        # }
+
+        for k, v in intent_dict.items():
+            if v == intent:
+                intent_id = int(k)
+                break
 
         generation_kwargs = {
             "min_length": -1,
@@ -152,27 +152,28 @@ def main(emotion):
             "top_p": 1.0,
             "do_sample": True,
             "pad_token_id": tokenizer.eos_token_id,
-            "max_new_tokens": 32,
+            "max_new_tokens": 128,
         }
 
         for epoch, batch in tqdm(enumerate(ppo_trainer.dataloader)):
             query_tensors = batch["input_ids"]
 
-            #### Get response from calm
+            #### Get response from llm
             response_tensors = []
             for query in query_tensors:
                 response = ppo_trainer.generate(query, **generation_kwargs)
-                gen_len = len(response.squeeze())
-                response_tensors.append(response.squeeze()[-gen_len:])
+                query_len = len(query.squeeze())
+                response_tensors.append(response.squeeze()[query_len:])
             batch["response"] = [
                 tokenizer.decode(r.squeeze()) for r in response_tensors
             ]
+            batch
 
             #### Compute sentiment score
             texts = batch["response"]
             pipe_outputs = emotion_pipe(texts, **sent_kwargs)
             rewards = [
-                torch.tensor(output[emotion_id]["score"]) for output in pipe_outputs
+                torch.tensor(output[intent_id]["score"]) for output in pipe_outputs
             ]
 
             #### Run PPO step
@@ -208,10 +209,10 @@ def main(emotion):
 
         # #### sentiment analysis of query/response pairs before/after
         # texts = [q + r for q, r in zip(game_data["query"], game_data["response (before)"])]
-        # game_data["rewards (before)"] = [output[emotion_id]["score"] for output in emotion_pipe(texts, **sent_kwargs)]
+        # game_data["rewards (before)"] = [output[intent_id]["score"] for output in emotion_pipe(texts, **sent_kwargs)]
 
         # texts = [q + r for q, r in zip(game_data["query"], game_data["response (after)"])]
-        # game_data["rewards (after)"] = [output[emotion_id]["score"] for output in emotion_pipe(texts, **sent_kwargs)]
+        # game_data["rewards (after)"] = [output[intent_id]["score"] for output in emotion_pipe(texts, **sent_kwargs)]
 
         # # store results in a dataframe
         # df_results = pd.DataFrame(game_data)
@@ -222,7 +223,7 @@ def main(emotion):
         # print("median:")
         # print(df_results[["rewards (before)", "rewards (after)"]].median())
 
-        save_dir = f"/workspace/Emotion_Intent_Chat/emo_int_chat/emotion_lora_tuning/tuned_model/emotion_lora_{config.model_name.split('/')[-1]}_{current_time}_{emotion}"
+        save_dir = f"/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/intent_lora_{config.model_name.split('/')[-1]}_{current_time}_{intent}"
         os.makedirs(save_dir, exist_ok=True)
 
         lora_model.save_pretrained(save_dir, push_to_hub=False)
@@ -235,24 +236,24 @@ def main(emotion):
         del ppo_trainer
         torch.cuda.empty_cache()
     except Exception as e:
-        send_slack_message(f"Training failed with error: {str(e)}")
         wandb.finish()
+        send_slack_message(f"Training failed with error: {str(e)}")
         del lora_model
         del ppo_trainer
         torch.cuda.empty_cache()
 
 
 if __name__ == "__main__":
-    emotion_list = [
-        "Joy",
-        "Sadness",
-        "Anticipation",
-        "Surprise",
-        "Anger",
-        "Fear",
-        "Disgust",
-        "Trust",
+    intent_list = [
+        "acknowledging",
+        "agreeing",
+        "consoling",
+        "encouraging",
+        "questioning",
+        "suggesting",
+        "sympathizing",
+        "wishing",
     ]
-    for emotion in emotion_list[:]:
-        main(emotion)
-    send_slack_message("All training completed succesfully. (emotion lora)")
+    for intent in intent_list[:]:
+        main(intent)
+    send_slack_message("All training completed succesfully. (intent lora)")
