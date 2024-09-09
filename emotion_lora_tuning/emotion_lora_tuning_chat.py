@@ -77,7 +77,7 @@ def collator(data):
     return dict((key, [d[key] for d in data]) for key in data[0])
 
 
-def main(intent):
+def main(emotion):
     try:
         config = PPOConfig(
             model_name="/workspace/Emotion_Intent_Chat/Swallow-7b-instruct-v0.1",
@@ -92,8 +92,8 @@ def main(intent):
 
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
         wandb.init(
-            project=f"intent_lora_tuning",
-            name=f"intent_lora_{config.model_name.split('/')[-1]}_{current_time}_{intent}",
+            project=f"emotion_lora_tuning",
+            name=f"emotion_lora_{config.model_name.split('/')[-1]}_{current_time}_{emotion}",
         )
 
         dataset = build_dataset(config)
@@ -125,23 +125,23 @@ def main(intent):
         if ppo_trainer.accelerator.num_processes == 1:
             device = 0 if torch.cuda.is_available() else "cpu"
 
-        reward_model_path = "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_reward_model/tuned_model/20240729_022849_bert-base-japanese-v3_reduce_lr_on_plateau/checkpoint-13674"
+        reward_model_path = "/workspace/Emotion_Intent_Chat/emo_int_chat/emotion_reward_model/tuned_model/20240817_204322_bert-base-japanese-v3_reduce_lr_on_plateau/checkpoint-4886"
 
         emotion_pipe = pipeline(
             "text-classification", model=reward_model_path, device=device
         )
 
-        with open(
-            os.path.join(reward_model_path, "label_id.json"),
-            mode="rt",
-            encoding="utf-8",
-        ) as f:
-            intent_dict = json.load(f)
+        # with open(
+        #     os.path.join(reward_model_path, "label_id.json"),
+        #     mode="rt",
+        #     encoding="utf-8",
+        # ) as f:
+        #     intent_dict = json.load(f)
 
-        for k, v in intent_dict.items():
-            if v == intent:
-                intent_id = int(k)
-                break
+        # for k, v in intent_dict.items():
+        #     if v == intent:
+        #         intent_id = int(k)
+        #         break
 
         generation_kwargs = {
             "min_length": -1,
@@ -172,7 +172,7 @@ def main(intent):
             rewards = []
             for output in pipe_outputs:
                 for label_score in output:
-                    if label_score["label"] == intent:
+                    if label_score["label"] == emotion:
                         rewards.append(torch.tensor(label_score["score"]))
                         break
             
@@ -224,7 +224,7 @@ def main(intent):
         # print("median:")
         # print(df_results[["rewards (before)", "rewards (after)"]].median())
 
-        save_dir = f"/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/intent_lora_{config.model_name.split('/')[-1]}_{current_time}_{intent}"
+        save_dir = f"/workspace/Emotion_Intent_Chat/emo_int_chat/emotion_lora_tuning/tuned_model/emotion_lora_{config.model_name.split('/')[-1]}_{current_time}_{emotion}"
         os.makedirs(save_dir, exist_ok=True)
 
         lora_model.save_pretrained(save_dir, push_to_hub=False)
@@ -245,16 +245,16 @@ def main(intent):
 
 
 if __name__ == "__main__":
-    intent_list = [
-        "acknowledging",
-        "agreeing",
-        "consoling",
-        "encouraging",
-        "questioning",
-        "suggesting",
-        "sympathizing",
-        "wishing",
+    emotion_list = [
+        "Joy",
+        "Sadness",
+        "Anticipation",
+        "Surprise",
+        "Anger",
+        "Fear",
+        "Disgust",
+        "Trust",
     ]
-    for intent in intent_list[:]:
-        main(intent)
-    send_slack_message("All training completed succesfully. (intent lora)")
+    for emotion in emotion_list[:]:
+        main(emotion)
+    send_slack_message("All training completed succesfully. (emotion lora)")
