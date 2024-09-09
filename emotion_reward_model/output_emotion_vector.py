@@ -45,13 +45,16 @@ def output_graph(num: int, input_text: str):
     df = pd.DataFrame(out_dict.items(), columns=['name', 'prob'])
     ax = sns.barplot(x='name', y='prob', data=df)
     plt.title('入力文: ' + input_text, fontsize=15, fontproperties=font_prop)
+
+    # 縦軸の範囲を0から3に設定
+    ax.set_ylim(0, 3)
     
     # 固定されたティック位置を設定し、ラベルを斜めに配置
     ax.set_xticks(range(len(label_names)))
     ax.set_xticklabels(label_names, rotation=45, ha='center', fontsize=10, fontproperties=font_prop)
     
     plt.tight_layout()  # レイアウトを調整して、ラベルが重ならないようにする
-    plt.savefig(f"Intent_{num}_{input_text}.png")  # グラフを保存する
+    plt.savefig(f"Emotion_{num}_{input_text}.png")  # グラフを保存する
     plt.show()
 
 def np_softmax(x):
