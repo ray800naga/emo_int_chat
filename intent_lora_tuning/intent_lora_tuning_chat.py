@@ -130,6 +130,8 @@ def main(intent):
         emotion_pipe = pipeline(
             "text-classification", model=reward_model_path, device=device
         )
+        
+        reward_model_tokenizer = AutoTokenizer.from_pretrained(reward_model_path)
 
         with open(
             os.path.join(reward_model_path, "label_id.json"),
@@ -164,7 +166,13 @@ def main(intent):
             batch["response"] = [
                 tokenizer.decode(r.squeeze()) for r in response_tensors
             ]
-            batch
+            reward_tokenized_response = [
+                reward_model_tokenizer.encode(r) for r in batch["response"]
+            ]
+            for i, tokens in enumerate(reward_tokenized_response):
+                if len(tokens) > 512:
+                    batch["response"][i] = reward_model_tokenizer.decode(tokens[:512])
+            
 
             #### Compute sentiment score
             texts = batch["response"]
@@ -255,6 +263,6 @@ if __name__ == "__main__":
         "sympathizing",
         "wishing",
     ]
-    for intent in intent_list[:]:
+    for intent in intent_list[5:6]:
         main(intent)
     send_slack_message("All training completed succesfully. (intent lora)")
