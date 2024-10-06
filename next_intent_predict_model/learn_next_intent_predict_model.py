@@ -171,7 +171,7 @@ def main(scheduler_name):
 
 if __name__ == "__main__":
     scheduler_name_list = ['linear', 'cosine', 'cosine_with_restarts', 'polynomial', 'constant_with_warmup', 'reduce_lr_on_plateau']
-    for scheduler_name in scheduler_name_list:
+    for scheduler_name in scheduler_name_list[-1:]:
         print(f"Start training with {scheduler_name} scheduler")
         main(scheduler_name)
         print(f"Finish training with {scheduler_name} scheduler")

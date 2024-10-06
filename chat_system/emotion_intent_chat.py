@@ -1,9 +1,10 @@
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
+from peft import PeftConfig, PeftModel
 
-model_name = "/workspace/Emotion_Intent_Chat/Swallow-7b-instruct-v0.1"
-model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.bfloat16, device_map="auto")
-tokenizer = AutoTokenizer.from_pretrained(model_name)
+config  = PeftConfig.from_pretrained("/workspace/Emotion_Intent_Chat/emo_int_chat/emotion_lora_tuning/tuned_model/emotion_lora_Swallow-7b-instruct-v0.1_20240908_135426_Joy")
+model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path, device_map="auto").eval()
+tokenizer = AutoTokenizer.from_pretrained("/workspace/Emotion_Intent_Chat/emo_int_chat/emotion_lora_tuning/tuned_model/emotion_lora_Swallow-7b-instruct-v0.1_20240908_135426_Joy")
 
 device = "cuda"
 
@@ -12,18 +13,11 @@ messages = [
     {"role": "user", "content": "東京工業大学の主なキャンパスについて教えてください"}
 ]
 
-# メッセージをエンコードし、テンソル形式で取得
 encodeds = tokenizer.apply_chat_template(messages, return_tensors="pt")
 
-# 入力をcudaに転送
-model_inputs = encodeds['input_ids'].to(device)
-
-# モデルをデバイスに移動
+model_inputs = encodeds.to(device)
 model.to(device)
 
-# 生成
-generated_ids = model.generate(model_inputs, max_new_tokens=128, do_sample=True)
-
-# 出力をデコード
-decoded = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+generated_ids = model.generate(model_inputs, max_new_tokens=512, do_sample=True)
+decoded = tokenizer.batch_decode(generated_ids)
 print(decoded[0])
