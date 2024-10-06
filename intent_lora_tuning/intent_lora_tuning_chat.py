@@ -51,7 +51,8 @@ def build_dataset(config):
     # pickleの読み込み
     with open(
         # "/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue.pkl",
-        "/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue_1turn.pkl",
+        # "/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue_1turn.pkl",
+        "/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue_3turn.pkl",
         "rb",
     ) as f:
         conversation_list = pickle.load(f)
@@ -81,7 +82,7 @@ def main(intent):
     try:
         config = PPOConfig(
             model_name="/workspace/Emotion_Intent_Chat/Swallow-7b-instruct-v0.1",
-            learning_rate=1.41e-5,
+            learning_rate=1.41e-6,
             log_with="wandb",
             batch_size=8,
             mini_batch_size=2,
@@ -93,7 +94,7 @@ def main(intent):
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
         wandb.init(
             project=f"intent_lora_tuning",
-            name=f"intent_lora_{config.model_name.split('/')[-1]}_{current_time}_{intent}",
+            name=f"intent_lora_{config.model_name.split('/')[-1]}_{current_time}_{intent}_3turn_low_lr",
         )
 
         dataset = build_dataset(config)
@@ -171,7 +172,7 @@ def main(intent):
             ]
             for i, tokens in enumerate(reward_tokenized_response):
                 if len(tokens) > 512:
-                    batch["response"][i] = reward_model_tokenizer.decode(tokens[:512])
+                    batch["response"][i] = reward_model_tokenizer.decode(tokens[:500])
             
 
             #### Compute sentiment score
@@ -254,15 +255,15 @@ def main(intent):
 
 if __name__ == "__main__":
     intent_list = [
-        "acknowledging",
-        "agreeing",
-        "consoling",
-        "encouraging",
-        "questioning",
-        "suggesting",
+        # "acknowledging",
+        # "agreeing",
+        # "consoling",
+        # "encouraging",
+        # "questioning",
+        # "suggesting",
         "sympathizing",
-        "wishing",
+        # "wishing",
     ]
-    for intent in intent_list[5:6]:
+    for intent in intent_list[:]:
         main(intent)
     send_slack_message("All training completed succesfully. (intent lora)")
