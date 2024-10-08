@@ -104,8 +104,13 @@ for i, adapter in enumerate(adapter_path_list[1:]):
 
 adapters = intent_list
 
-intent_predict_model = AutoModelForSequenceClassification.from_pretrained("/workspace/Emotion_Intent_Chat/emo_int_chat/next_intent_predict_model/tuned_model/20240803_040940_bert-base-japanese-v3_reduce_lr_on_plateau/checkpoint-9022", num_labels=8)
-predict_model_tokenizer = AutoTokenizer.from_pretrained("/workspace/Emotion_Intent_Chat/emo_int_chat/next_intent_predict_model/tuned_model/20240803_040940_bert-base-japanese-v3_reduce_lr_on_plateau")
+# # no weight
+# intent_predict_model = AutoModelForSequenceClassification.from_pretrained("/workspace/Emotion_Intent_Chat/emo_int_chat/next_intent_predict_model/tuned_model/20240803_040940_bert-base-japanese-v3_reduce_lr_on_plateau/checkpoint-9022", num_labels=8)
+# predict_model_tokenizer = AutoTokenizer.from_pretrained("/workspace/Emotion_Intent_Chat/emo_int_chat/next_intent_predict_model/tuned_model/20240803_040940_bert-base-japanese-v3_reduce_lr_on_plateau")
+
+# weight
+intent_predict_model = AutoModelForSequenceClassification.from_pretrained("/workspace/Emotion_Intent_Chat/emo_int_chat/next_intent_predict_model/tuned_model/20241006_161421_bert-base-japanese-v3_reduce_lr_on_plateau/checkpoint-67665")
+predict_model_tokenizer = AutoTokenizer.from_pretrained("/workspace/Emotion_Intent_Chat/emo_int_chat/next_intent_predict_model/tuned_model/20241006_161421_bert-base-japanese-v3_reduce_lr_on_plateau")
 
 for conversation in conversation_list:
     user_input = conversation[-1]["content"]
