@@ -13,6 +13,7 @@ from datetime import datetime
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 import wandb
+from torch.nn import CrossEntropyLoss
 
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'modules')))
@@ -67,7 +68,7 @@ def main(scheduler_name):
         df_all = df_all.rename(columns={"テキスト": "text", "Next_Label": "label_str"})
 
         # # for debug
-        # df_all = df_all[:100]
+        # df_all = df_all[:1000]
 
 
         # ラベルエンコーディング
@@ -94,15 +95,57 @@ def main(scheduler_name):
         num_labels = 8
         model = AutoModelForSequenceClassification.from_pretrained(checkpoint, num_labels=num_labels)
 
+        ## test (重みづけあり)
+        # クラスのサンプル数に基づいてクラス重みを計算
+        class_counts = df_train['label'].value_counts().sort_index().values
+        class_weights = torch.tensor([1.0 / count for count in class_counts], dtype=torch.float)
+        
+        # クラス重みをCUDAデバイスに移動
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        class_weights = class_weights.to(device)
+
+        # CrossEntropyLossにクラスの重みを渡す
+        loss_fn = CrossEntropyLoss(weight=class_weights)
+
+        # Trainerのcompute_lossメソッドをオーバーライドして、カスタム損失関数を使用
+        class CustomTrainer(Trainer):
+            def compute_loss(self, model, inputs, return_outputs=False):
+                labels = inputs.get("labels")
+                outputs = model(**inputs)
+                logits = outputs.get("logits")
+                loss = loss_fn(logits, labels)
+                return (loss, outputs) if return_outputs else loss
+        ## end test
+        
+        
         # 評価指標を定義
-        metric = load_metric("accuracy")
+        accuracy_metric = load_metric("accuracy")
+        f1_metric = load_metric("f1")
+        recall_metric = load_metric("recall")
+        precision_metric = load_metric("precision")
 
         def compute_metrics(eval_pred):
             logits, labels = eval_pred
             predictions = np.argmax(logits, axis=-1)
-            accuracy = metric.compute(predictions=predictions, references=labels)
-            wandb.log({"accuracy": accuracy['accuracy']})
-            return accuracy
+            
+            accuracy = accuracy_metric.compute(predictions=predictions, references=labels)
+            f1 = f1_metric.compute(predictions=predictions, references=labels, average='macro')
+            recall = recall_metric.compute(predictions=predictions, references=labels, average='macro')
+            precision = precision_metric.compute(predictions=predictions, references=labels, average='macro')
+
+            wandb.log({
+                "accuracy": accuracy['accuracy'],
+                "f1": f1['f1'],
+                "recall": recall['recall'],
+                "precision": precision['precision']
+            })
+            
+            return {
+                "accuracy": accuracy['accuracy'],
+                "f1": f1['f1'],
+                "recall": recall['recall'],
+                "precision": precision['precision']
+            }
 
         # 訓練時の設定
         output_dir = f'tuned_model/{current_time}_{model_name}_{scheduler_name}'
@@ -114,7 +157,7 @@ def main(scheduler_name):
             load_best_model_at_end=True,
             save_strategy='epoch',
             logging_strategy='epoch',
-            learning_rate=5e-6,  # 初期の学習率を指定
+            learning_rate=5e-7,  # 初期の学習率を指定
             warmup_ratio=0.05,
             report_to="wandb"  # Weight & Biasesへログを送信するように設定
         )
@@ -137,14 +180,24 @@ def main(scheduler_name):
             num_training_steps=num_training_steps
         )
 
-        # Trainerの設定
-        trainer = Trainer(
+        # # Trainerの設定 (重みづけなし)
+        # trainer = Trainer(
+        #     model=model,
+        #     args=training_args,
+        #     train_dataset=train_tokenized_dataset,
+        #     eval_dataset=test_tokenized_dataset,
+        #     compute_metrics=compute_metrics,
+        #     optimizers=(optimizer, lr_scheduler)  # オプティマイザとスケジューラをTrainerに渡す
+        # )
+        
+        # カスタムTrainerを使用 (重みづけあり)
+        trainer = CustomTrainer(
             model=model,
             args=training_args,
             train_dataset=train_tokenized_dataset,
             eval_dataset=test_tokenized_dataset,
             compute_metrics=compute_metrics,
-            optimizers=(optimizer, lr_scheduler)  # オプティマイザとスケジューラをTrainerに渡す
+            optimizers=(optimizer, lr_scheduler)
         )
 
         # 学習実行
