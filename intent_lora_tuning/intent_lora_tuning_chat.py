@@ -51,8 +51,8 @@ def build_dataset(config):
     # pickleの読み込み
     with open(
         # "/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue.pkl",
-        # "/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue_1turn.pkl",
-        "/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue_3turn.pkl",
+        "/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue_1turn.pkl",
+        # "/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue_3turn.pkl",
         "rb",
     ) as f:
         conversation_list = pickle.load(f)
@@ -94,7 +94,7 @@ def main(intent):
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
         wandb.init(
             project=f"intent_lora_tuning",
-            name=f"intent_lora_{config.model_name.split('/')[-1]}_{current_time}_{intent}_3turn_low_lr",
+            name=f"intent_lora_{config.model_name.split('/')[-1]}_{current_time}_{intent}_1turn_low_lr",
         )
 
         dataset = build_dataset(config)
@@ -255,14 +255,14 @@ def main(intent):
 
 if __name__ == "__main__":
     intent_list = [
-        # "acknowledging",
-        # "agreeing",
-        # "consoling",
-        # "encouraging",
-        # "questioning",
-        # "suggesting",
+        "acknowledging",
+        "agreeing",
+        "consoling",
+        "encouraging",
+        "questioning",
+        "suggesting",
         "sympathizing",
-        # "wishing",
+        "wishing",
     ]
     for intent in intent_list[:]:
         main(intent)
