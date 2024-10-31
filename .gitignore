@@ -180,3 +180,6 @@ next_intent_predict_model/wandb/
 
 intent_lora_tuning/tuned_model/
 intent_lora_tuning/wandb
+
+mixture_lora_weight/tuned_model
+mixture_lora_weight/wandb

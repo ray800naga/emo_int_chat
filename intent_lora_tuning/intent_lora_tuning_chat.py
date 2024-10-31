@@ -31,7 +31,7 @@ client = WebClient(token=slack_token)
 # 自分のユーザーIDを取得
 with open(
     "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_reward_model/slack_user_id.txt"
-) as f:
+) as f: 
     slack_user = f.read().strip()
 
 
