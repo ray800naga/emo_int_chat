@@ -14,13 +14,13 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 import wandb
 from torch.nn import CrossEntropyLoss
+from multiprocessing import Pool
 
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'modules')))
 from scheduler import my_get_scheduler
 
 # モデル指定
-# model_name = 'bert-large-japanese-v2'
 model_name = 'bert-base-japanese-v3'
 
 # Slack通知の設定
@@ -47,67 +47,53 @@ def send_slack_message(message):
 
 def main(scheduler_name):
     try:
-        # 現在の日時を取得してフォーマット
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # empathetic intent with next labelの読み込み
-        df = pd.read_excel('/workspace/Emotion_Intent_Chat/empathetic_dialogues/empathetic_intent_jp_next_label.xlsx', sheet_name=None)
+        # empathetic intentの読み込み
+        df = pd.read_excel('/workspace/Emotion_Intent_Chat/empathetic_dialogues/empathetic_intent_jp_2nd.xlsx', sheet_name=None)
 
-        # 8つの発話意図のリスト
         intent_names = ["questioning", "acknowledging", "consoling", "agreeing", "encouraging", "sympathizing", "suggesting", "wishing"]
 
         df_all = pd.DataFrame()
         for sheet in df.keys():
             df_all = pd.concat([df_all, df[sheet]])
 
-        # Labelがintentで、Typeがutteranceの者だけに絞り込む
-        df_all = df_all[df_all["Next_Label"].isin(intent_names)]
+        df_all = df_all[df_all["Label"].isin(intent_names)]
         df_all = df_all[df_all["Type"] == "utterance"]
 
-        df_all = df_all.loc[:, ["テキスト", "Next_Label"]]
-        df_all = df_all.rename(columns={"テキスト": "text", "Next_Label": "label_str"})
-
-        # # for debug
-        # df_all = df_all[:1000]
-
+        df_all = df_all.loc[:, ["テキスト", "Label"]]
+        df_all = df_all.rename(columns={"テキスト": "text", "Label": "label_str"})
 
         # ラベルエンコーディング
         le = LabelEncoder()
         df_all["label"] = le.fit_transform(df_all["label_str"])
-        print(le.classes_)  # ここでラベルの対応関係が表示される
+        print(le.classes_)
 
-        df_train, df_test = train_test_split(df_all, test_size=0.2, random_state=0)
+        df_train, df_temp = train_test_split(df_all, test_size=0.2, random_state=0)
+        df_val, df_test = train_test_split(df_temp, test_size=0.5, random_state=0)
 
         checkpoint = f'/workspace/Emotion_Intent_Chat/{model_name}'
         tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
         def tokenize_function(batch):
-            tokenized_batch = tokenizer(batch['text'], truncation=True, padding="max_length")
-            return tokenized_batch
+            return tokenizer(batch['text'], truncation=True, padding="max_length")
 
         train_dataset = Dataset.from_pandas(df_train)
+        val_dataset = Dataset.from_pandas(df_val)
         test_dataset = Dataset.from_pandas(df_test)
 
         train_tokenized_dataset = train_dataset.map(tokenize_function, batched=True)
+        val_tokenized_dataset = val_dataset.map(tokenize_function, batched=True)
         test_tokenized_dataset = test_dataset.map(tokenize_function, batched=True)
-
 
         num_labels = 8
         model = AutoModelForSequenceClassification.from_pretrained(checkpoint, num_labels=num_labels)
 
-        ## test (重みづけあり)
-        # クラスのサンプル数に基づいてクラス重みを計算
         class_counts = df_train['label'].value_counts().sort_index().values
-        class_weights = torch.tensor([1.0 / count for count in class_counts], dtype=torch.float)
-        
-        # クラス重みをCUDAデバイスに移動
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        class_weights = class_weights.to(device)
+        class_weights = torch.tensor([1.0 / count for count in class_counts], dtype=torch.float).to("cuda" if torch.cuda.is_available() else "cpu")
 
-        # CrossEntropyLossにクラスの重みを渡す
         loss_fn = CrossEntropyLoss(weight=class_weights)
 
-        # Trainerのcompute_lossメソッドをオーバーライドして、カスタム損失関数を使用
         class CustomTrainer(Trainer):
             def compute_loss(self, model, inputs, return_outputs=False):
                 labels = inputs.get("labels")
@@ -115,10 +101,7 @@ def main(scheduler_name):
                 logits = outputs.get("logits")
                 loss = loss_fn(logits, labels)
                 return (loss, outputs) if return_outputs else loss
-        ## end test
-        
-        
-        # 評価指標を定義
+
         accuracy_metric = load_metric("accuracy")
         f1_metric = load_metric("f1")
         recall_metric = load_metric("recall")
@@ -127,12 +110,11 @@ def main(scheduler_name):
         def compute_metrics(eval_pred):
             logits, labels = eval_pred
             predictions = np.argmax(logits, axis=-1)
-            
             accuracy = accuracy_metric.compute(predictions=predictions, references=labels)
             f1 = f1_metric.compute(predictions=predictions, references=labels, average='macro')
             recall = recall_metric.compute(predictions=predictions, references=labels, average='macro')
             precision = precision_metric.compute(predictions=predictions, references=labels, average='macro')
-
+            
             wandb.log({
                 "accuracy": accuracy['accuracy'],
                 "f1": f1['f1'],
@@ -147,31 +129,26 @@ def main(scheduler_name):
                 "precision": precision['precision']
             }
 
-        # 訓練時の設定
-        output_dir = f'tuned_model/{current_time}_{model_name}_{scheduler_name}'
+        output_dir = f'tuned_model/weighted_{current_time}_{model_name}_{scheduler_name}'
         training_args = TrainingArguments(
             output_dir=output_dir,
             per_device_train_batch_size=8,
-            num_train_epochs=15,
+            num_train_epochs=30,
             evaluation_strategy="epoch",
             load_best_model_at_end=True,
+            metric_for_best_model="f1",
+            greater_is_better=True,
             save_strategy='epoch',
             logging_strategy='epoch',
-            learning_rate=5e-7,  # 初期の学習率を指定
+            learning_rate=5e-7,
             warmup_ratio=0.05,
-            report_to="wandb"  # Weight & Biasesへログを送信するように設定
+            report_to="wandb"
         )
 
-        # W&Bの初期化
-        # wandb.init(project=f"intent_reward_model_{model_name}", config=training_args, name=f"intent_{current_time}_{model_name}")
+        wandb.init(project=f"weighted_intent_reward_model_{model_name}", config=training_args, name=f"intent_{current_time}_{model_name}_{scheduler_name}")
 
-        # for debug
-        wandb.init(project=f"next_intent_prediction_model_{model_name}", config=training_args, name=f"intent_prediction_{current_time}_{model_name}_{scheduler_name}")
-
-        # オプティマイザの設定
         optimizer = AdamW(model.parameters(), lr=training_args.learning_rate)
 
-        # スケジューラの設定
         num_training_steps = (len(train_tokenized_dataset) // (training_args.per_device_train_batch_size * torch.cuda.device_count())) * training_args.num_train_epochs
         lr_scheduler = my_get_scheduler(
             scheduler_name=scheduler_name,
@@ -180,34 +157,20 @@ def main(scheduler_name):
             num_training_steps=num_training_steps
         )
 
-        # # Trainerの設定 (重みづけなし)
-        # trainer = Trainer(
-        #     model=model,
-        #     args=training_args,
-        #     train_dataset=train_tokenized_dataset,
-        #     eval_dataset=test_tokenized_dataset,
-        #     compute_metrics=compute_metrics,
-        #     optimizers=(optimizer, lr_scheduler)  # オプティマイザとスケジューラをTrainerに渡す
-        # )
-        
-        # カスタムTrainerを使用 (重みづけあり)
         trainer = CustomTrainer(
             model=model,
             args=training_args,
             train_dataset=train_tokenized_dataset,
-            eval_dataset=test_tokenized_dataset,
+            eval_dataset=val_tokenized_dataset,
             compute_metrics=compute_metrics,
             optimizers=(optimizer, lr_scheduler)
         )
 
-        # 学習実行
         trainer.train()
 
-        # モデルとトークナイザーの保存
         model.save_pretrained(output_dir)
         tokenizer.save_pretrained(output_dir)
 
-        # ラベル情報をlabel_id.jsonに保存
         label_mapping = {int(i): label for i, label in enumerate(le.classes_)}
         label_path = os.path.join(output_dir, "label_id.json")
         with open(label_path, "w") as f:
@@ -215,17 +178,26 @@ def main(scheduler_name):
 
         print("Saved label mapping to label_id.json:")
         print(label_mapping)
+
+        test_results = trainer.evaluate(eval_dataset=test_tokenized_dataset)
+        print("Test results:", test_results)
+
+        wandb.log({
+            "test_accuracy": test_results['eval_accuracy'],
+            "test_f1": test_results['eval_f1'],
+            "test_recall": test_results['eval_recall'],
+            "test_precision": test_results['eval_precision']
+        })
         
         wandb.finish()
-        send_slack_message(f"Training completed successfully. \r{output_dir} \rintent_prediction_{current_time}_{model_name}_{scheduler_name}")
+        send_slack_message(f"Training completed successfully. \r{output_dir}")
     except Exception as e:
         send_slack_message(f"Training failed with error: {str(e)}")
         raise
 
 if __name__ == "__main__":
     scheduler_name_list = ['linear', 'cosine', 'cosine_with_restarts', 'polynomial', 'constant_with_warmup', 'reduce_lr_on_plateau']
-    for scheduler_name in scheduler_name_list[-1:]:
-        print(f"Start training with {scheduler_name} scheduler")
-        main(scheduler_name)
-        print(f"Finish training with {scheduler_name} scheduler")
+    
+    with Pool(processes=5) as pool:
+        pool.map(main, scheduler_name_list)
     send_slack_message("All training completed successfully.")

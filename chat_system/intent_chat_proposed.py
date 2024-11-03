@@ -101,27 +101,27 @@ for conversation in tqdm(conversation_list):
     conversation_prompt_list.append(conversation)
 
 # base_modelの出力
-base_model = AutoModelForCausalLM.from_pretrained("/workspace/Emotion_Intent_Chat/Swallow-7b-instruct-v0.1", device_map="auto").eval()
-tokenizer = AutoTokenizer.from_pretrained("/workspace/Emotion_Intent_Chat/Swallow-7b-instruct-v0.1")
-df_base = pd.DataFrame(columns=["messages", "output"])
-print("base_model")
-for messages in tqdm(conversation_prompt_list):
-    encodeds = tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=True)
-    query = tokenizer.decode(encodeds)
-    query_len = len(query)
+# base_model = AutoModelForCausalLM.from_pretrained("/workspace/Emotion_Intent_Chat/Swallow-7b-instruct-v0.1", device_map="auto").eval()
+# tokenizer = AutoTokenizer.from_pretrained("/workspace/Emotion_Intent_Chat/Swallow-7b-instruct-v0.1")
+# df_base = pd.DataFrame(columns=["messages", "output"])
+# print("base_model")
+# for messages in tqdm(conversation_prompt_list):
+#     encodeds = tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=True)
+#     query = tokenizer.decode(encodeds)
+#     query_len = len(query)
 
-    model_inputs = torch.tensor(encodeds).to(device)
-    # model.to(device)
+#     model_inputs = torch.tensor(encodeds).to(device)
+#     # model.to(device)
 
-    generated_ids = base_model.generate(model_inputs.unsqueeze(0), max_new_tokens=512, do_sample=True)
-    decoded = tokenizer.batch_decode(generated_ids)
-    # print(decoded[0])
-    new_row = pd.DataFrame({"messages": [messages], "output": [decoded[0][query_len:]]})
-    df_base = pd.concat([df_base, new_row], ignore_index=True)
+#     generated_ids = base_model.generate(model_inputs.unsqueeze(0), max_new_tokens=512, do_sample=True)
+#     decoded = tokenizer.batch_decode(generated_ids)
+#     # print(decoded[0])
+#     new_row = pd.DataFrame({"messages": [messages], "output": [decoded[0][query_len:]]})
+#     df_base = pd.concat([df_base, new_row], ignore_index=True)
     
-df_base.to_excel("df_base_output.xlsx", index=False)
-del base_model
-exit()
+# df_base.to_excel("df_base_output.xlsx", index=False, encoding="utf-8")
+# del base_model
+# exit()
 
 
 # # adapterをつけた時の出力
@@ -183,11 +183,13 @@ predict_model_tokenizer = AutoTokenizer.from_pretrained(
     "/workspace/Emotion_Intent_Chat/emo_int_chat/next_intent_predict_model/tuned_model/20241006_161421_bert-base-japanese-v3_reduce_lr_on_plateau"
 )
 
+df_proposed = pd.DataFrame(columns=["messages", "output", "adapter_weight"])
+
 output_intent_counter = {}
 for intent in intent_list:
     output_intent_counter[intent] = []
 
-for conversation in conversation_list:
+for conversation in tqdm(conversation_list):
     user_input = conversation[-1]["content"]
     tokens = predict_model_tokenizer(user_input, truncation=True, return_tensors="pt")
     tokens = {
@@ -233,17 +235,25 @@ for conversation in conversation_list:
     model.set_adapter("merge")
 
     # input conversation to LLM
-    text = tokenizer.apply_chat_template(
-        conversation, add_generation_prompt=True, tokenize=False
+    encoded = tokenizer.apply_chat_template(
+        conversation, add_generation_prompt=True, tokenize=True
     )
-    inputs = tokenizer(text, return_tensors="pt")
-    inputs = {k: v.to("cuda") for k, v in inputs.items()}
-    outputs = model.generate(**inputs, max_new_tokens=256, do_sample=True)
-    print("#######")
-    print(selected_adapter_list)
-    print(weights)
-    print(tokenizer.decode(outputs[0]))
-    input("press enter to continue...")
+    query = tokenizer.decode(encoded)
+    query_len = len(query)
+    model_inputs = torch.tensor(encoded).to(device)
+    outputs = model.generate(model_inputs.unsqueeze(0), max_new_tokens=512, do_sample=True)
+    decoded = tokenizer.batch_decode(outputs)
+    # print("#######")
+    # print(selected_adapter_list)
+    # print(weights)
+    # print(decoded[0])
+    # input("press enter to continue...")
+    
+    # dataframeに追加
+    new_row = pd.DataFrame({"messages": [conversation], "output": [decoded[0][query_len:]], "adapter_weight": [weights]})
+    df_proposed = pd.concat([df_proposed, new_row], ignore_index=True)
+    
+df_proposed.to_excel("df_proposed_output.xlsx", index=False)
 
 
 # for intent in intent_list:

@@ -202,7 +202,7 @@ for conversation in conversation_list:
     # sort
     out_dict_sorted = sorted(out_dict.items(), reverse=True, key=lambda x: x[1])
     # select adapter
-    threshold_of_adapter_selection = 0.8  # threshold of adapter selection
+    threshold_of_adapter_selection = 0.0  # threshold of adapter selection
     selected_adapter_list = []
     prob_sum = 0
     last_prob_score = 0
@@ -239,12 +239,18 @@ for conversation in conversation_list:
     inputs = tokenizer(text, return_tensors="pt")
     inputs = {k: v.to("cuda") for k, v in inputs.items()}
     outputs = model.generate(**inputs, max_new_tokens=256, do_sample=True)
-    print("#######")
-    print(selected_adapter_list)
-    print(weights)
-    print(tokenizer.decode(outputs[0]))
-    input("press enter to continue...")
+    decoded = tokenizer.batch_deecode(outputs)
+    # print("#######")
+    # print(selected_adapter_list)
+    # print(weights)
+    # print(tokenizer.decode(outputs[0]))
+    # input("press enter to continue...")
 
+    # dataframe追加
+    new_row = pd.DataFrame({"messages": [conversation], "output": [decoded[0][query_len:]], "adapter_weight": [weights]})
+    df_single = pd.concat([df_single, new_row], ignore_index=True)
+    
+df_single.to_excel("df_single_output.xslx, ", index=False)
 
 # for intent in intent_list:
 #     print(f"{intent}: {len(output_intent_counter[intent])}")
