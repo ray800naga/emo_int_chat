@@ -45,16 +45,28 @@ intent_list = [
 #     "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/intent_lora_Swallow-7b-instruct-v0.1_20240914_034959_wishing",
 # ]
 
-# intent 3turn low_lr
+# # intent 3turn low_lr
+# adapter_path_list = [
+#     "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/intent_lora_Swallow-7b-instruct-v0.1_20240925_064514_acknowledging",
+#     "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/intent_lora_Swallow-7b-instruct-v0.1_20240926_093351_agreeing",
+#     "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/intent_lora_Swallow-7b-instruct-v0.1_20240927_193209_consoling",
+#     "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/intent_lora_Swallow-7b-instruct-v0.1_20240929_014449_encouraging",
+#     "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/intent_lora_Swallow-7b-instruct-v0.1_20240930_035253_questioning",
+#     "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/intent_lora_Swallow-7b-instruct-v0.1_20241001_020956_suggesting",
+#     "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/intent_lora_Swallow-7b-instruct-v0.1_20241005_084716_sympathizing",
+#     "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/intent_lora_Swallow-7b-instruct-v0.1_20241003_163251_wishing",
+# ]
+
+# intent 3turns low_lr weighted_reward_model
 adapter_path_list = [
-    "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/intent_lora_Swallow-7b-instruct-v0.1_20240925_064514_acknowledging",
-    "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/intent_lora_Swallow-7b-instruct-v0.1_20240926_093351_agreeing",
-    "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/intent_lora_Swallow-7b-instruct-v0.1_20240927_193209_consoling",
-    "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/intent_lora_Swallow-7b-instruct-v0.1_20240929_014449_encouraging",
-    "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/intent_lora_Swallow-7b-instruct-v0.1_20240930_035253_questioning",
-    "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/intent_lora_Swallow-7b-instruct-v0.1_20241001_020956_suggesting",
-    "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/intent_lora_Swallow-7b-instruct-v0.1_20241005_084716_sympathizing",
-    "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/intent_lora_Swallow-7b-instruct-v0.1_20241003_163251_wishing",
+    "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/weighted_intent_lora_Swallow-7b-instruct-v0.1_20241105_140701_acknowledging",
+    "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/weighted_intent_lora_Swallow-7b-instruct-v0.1_20241105_140701_agreeing",
+    "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/weighted_intent_lora_Swallow-7b-instruct-v0.1_20241106_214445_consoling",
+    "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/weighted_intent_lora_Swallow-7b-instruct-v0.1_20241107_091516_encouraging",
+    "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/weighted_intent_lora_Swallow-7b-instruct-v0.1_20241108_154225_questioning",
+    "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/weighted_intent_lora_Swallow-7b-instruct-v0.1_20241108_192842_suggesting",
+    "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/weighted_intent_lora_Swallow-7b-instruct-v0.1_20241110_072240_sympathizing",
+    "/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/weighted_intent_lora_Swallow-7b-instruct-v0.1_20241110_170458_wishing"
 ]
 
 # # emotion 3turn low_lr
@@ -82,69 +94,8 @@ adapter_path_list = [
 import pickle
 from tqdm import tqdm
 
-with open(
-    # "/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue.pkl",
-    # "/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue_1turn.pkl",
-    "/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue_3turn.pkl",
-    "rb",
-) as f:
-    conversation_list = pickle.load(f)
-conversation_prompt_list = []
-for conversation in tqdm(conversation_list):
-    conversation.insert(
-        0,
-        {
-            "role": "system",
-            "content": "ユーザの発話に対して共感し、寄り添うような返答を日本語でしてください。その際、一言から二言程度で短く端的に答えてください。",
-        },
-    )
-    conversation_prompt_list.append(conversation)
-
-# base_modelの出力
-base_model = AutoModelForCausalLM.from_pretrained("/workspace/Emotion_Intent_Chat/Swallow-7b-instruct-v0.1", device_map="auto").eval()
-tokenizer = AutoTokenizer.from_pretrained("/workspace/Emotion_Intent_Chat/Swallow-7b-instruct-v0.1")
-df_base = pd.DataFrame(columns=["messages", "output"])
-print("base_model")
-for messages in tqdm(conversation_prompt_list):
-    encodeds = tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=True)
-    query = tokenizer.decode(encodeds)
-    query_len = len(query)
-
-    model_inputs = torch.tensor(encodeds).to(device)
-    # model.to(device)
-
-    generated_ids = base_model.generate(model_inputs.unsqueeze(0), max_new_tokens=512, do_sample=True)
-    decoded = tokenizer.batch_decode(generated_ids)
-    # print(decoded[0])
-    new_row = pd.DataFrame({"messages": [messages], "output": [decoded[0][query_len:]]})
-    df_base = pd.concat([df_base, new_row], ignore_index=True)
-    
-df_base.to_excel("df_base_output.xlsx", index=False)
-del base_model
-exit()
-
-
-# # adapterをつけた時の出力
-# for adapter_path in adapter_path_list:
-#     base_model = AutoModelForCausalLM.from_pretrained("/workspace/Emotion_Intent_Chat/Swallow-7b-instruct-v0.1", device_map="auto").eval()
-#     tokenizer = AutoTokenizer.from_pretrained("/workspace/Emotion_Intent_Chat/Swallow-7b-instruct-v0.1")
-#     model = PeftModel.from_pretrained(base_model, adapter_path, is_trainable=False)
-#     model.merge_adapter()
-
-#     print(adapter_path.split('_')[-1])
-
-#     for messages in conversation_prompt_list[:5]:
-#         encodeds = tokenizer.apply_chat_template(messages, return_tensors="pt")
-
-#         model_inputs = encodeds.to(device)
-#         # model.to(device)
-
-#         generated_ids = model.generate(model_inputs, max_new_tokens=128, do_sample=True)
-#         decoded = tokenizer.batch_decode(generated_ids)
-#         print(decoded[0])
-#     del model
-#     del base_model
-
+with open("/workspace/Emotion_Intent_Chat/3turns_test.pkl", 'rb') as f:
+    test_ds = pickle.load(f)
 
 def np_softmax(x):
     f_x = np.exp(x) / np.sum(np.exp(x))
@@ -164,15 +115,12 @@ tokenizer = AutoTokenizer.from_pretrained(
 model = PeftModel.from_pretrained(
     base_model, adapter_path_list[0], adapter_name=intent_list[0]
 )
-for i, adapter in enumerate(adapter_path_list):
+i = 1
+for adapter in adapter_path_list[1:]:
     _ = model.load_adapter(adapter, adapter_name=intent_list[i])
-
+    i += 1
 
 adapters = intent_list
-
-# no weight
-# intent_predict_model = AutoModelForSequenceClassification.from_pretrained("/workspace/Emotion_Intent_Chat/emo_int_chat/next_intent_predict_model/tuned_model/20240803_040940_bert-base-japanese-v3_reduce_lr_on_plateau/checkpoint-9022", num_labels=8)
-# predict_model_tokenizer = AutoTokenizer.from_pretrained("/workspace/Emotion_Intent_Chat/emo_int_chat/next_intent_predict_model/tuned_model/20240803_040940_bert-base-japanese-v3_reduce_lr_on_plateau")
 
 # # weight
 intent_predict_model = AutoModelForSequenceClassification.from_pretrained(
@@ -183,13 +131,15 @@ predict_model_tokenizer = AutoTokenizer.from_pretrained(
     "/workspace/Emotion_Intent_Chat/emo_int_chat/next_intent_predict_model/tuned_model/20241006_161421_bert-base-japanese-v3_reduce_lr_on_plateau"
 )
 
+df_proposed = pd.DataFrame(columns=["messages", "output", "adapter_weight"])
+
 output_intent_counter = {}
 for intent in intent_list:
     output_intent_counter[intent] = []
 
-for conversation in conversation_list:
-    user_input = conversation[-1]["content"]
-    tokens = predict_model_tokenizer(user_input, truncation=True, return_tensors="pt")
+for conversation in tqdm(test_ds):
+    last_user_input = conversation["last_user_input"]
+    tokens = predict_model_tokenizer(last_user_input, truncation=True, return_tensors="pt")
     tokens = {
         key: value.to(intent_predict_model.device) for key, value in tokens.items()
     }
@@ -197,12 +147,12 @@ for conversation in conversation_list:
     prob = np_softmax(preds.logits.cpu().detach().numpy()[0])
     out_dict = {n: p for n, p in zip(intent_list, prob)}
     output_intent_counter[max(out_dict, key=out_dict.get)].append(
-        (user_input, out_dict)
+        (conversation["query"], last_user_input, out_dict)
     )
     # sort
     out_dict_sorted = sorted(out_dict.items(), reverse=True, key=lambda x: x[1])
     # select adapter
-    threshold_of_adapter_selection = 0.0  # threshold of adapter selection
+    threshold_of_adapter_selection = 0  # threshold of adapter selection
     selected_adapter_list = []
     prob_sum = 0
     last_prob_score = 0
@@ -220,37 +170,31 @@ for conversation in conversation_list:
         else:
             weights.append(0.0)
 
-    # divide by min_prob
-    min_value = last_prob_score
-    weights = [x / min_value for x in weights]
+    # # divide by min_prob
+    # min_value = last_prob_score
+    # weights = [x / min_value for x in weights]
 
-    adapter_name = "merge"
-    density = 0.2
-    model.add_weighted_adapter(
-        adapters, weights, adapter_name, combination_type="ties", density=density
-    )
-
-    model.set_adapter("merge")
+    model.set_adapter(selected_adapter_list[0])
 
     # input conversation to LLM
-    text = tokenizer.apply_chat_template(
-        conversation, add_generation_prompt=True, tokenize=False
-    )
-    inputs = tokenizer(text, return_tensors="pt")
-    inputs = {k: v.to("cuda") for k, v in inputs.items()}
-    outputs = model.generate(**inputs, max_new_tokens=256, do_sample=True)
-    decoded = tokenizer.batch_deecode(outputs)
-    # print("#######")
-    # print(selected_adapter_list)
-    # print(weights)
-    # print(tokenizer.decode(outputs[0]))
+    encoded = conversation["input_ids"]
+    query = tokenizer.decode(encoded)
+    query_len = len(query)
+    model_inputs = torch.tensor(encoded).to(device)
+    outputs = model.generate(model_inputs.unsqueeze(0), max_new_tokens=512, do_sample=False)
+    decoded = tokenizer.batch_decode(outputs)
+    print("#######")
+    print(selected_adapter_list)
+    print(weights)
+    print(decoded[0])
     # input("press enter to continue...")
-
-    # dataframe追加
-    new_row = pd.DataFrame({"messages": [conversation], "output": [decoded[0][query_len:]], "adapter_weight": [weights]})
-    df_single = pd.concat([df_single, new_row], ignore_index=True)
     
-df_single.to_excel("df_single_output.xslx, ", index=False)
+    # dataframeに追加
+    new_row = pd.DataFrame({"messages": [conversation["conversation"]], "output": [decoded[0][query_len:]], "adapter_weight": [weights]})
+    df_proposed = pd.concat([df_proposed, new_row], ignore_index=True)
+    
+df_proposed.to_excel("df_single_output_no_sample.xlsx", index=False)
+
 
 # for intent in intent_list:
 #     print(f"{intent}: {len(output_intent_counter[intent])}")

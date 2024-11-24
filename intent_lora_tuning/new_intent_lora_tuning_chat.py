@@ -51,7 +51,7 @@ def build_dataset(config):
         "rb",
     ) as f:
         conversation_list = pickle.load(f)
-    dic = {"input_ids": [], "query": []}
+    dic = {"input_ids": [], "query": [], "last_user_input": [], "conversation": []}
     for conversation in tqdm(conversation_list):
         conversation.insert(
             0,
@@ -64,22 +64,25 @@ def build_dataset(config):
         decoded = tokenizer.decode(encoded)
         dic["input_ids"].append(encoded)
         dic["query"].append(decoded)
+        dic["last_user_input"].append(conversation[-1]["content"])
+        dic["conversation"].append(conversation)
     df = pd.DataFrame(dic)
 
     # Split the dataset
     train_df, val_test_df = train_test_split(df, test_size=0.05, random_state=seed)
-    val_df, test_df = train_test_split(
-        val_test_df, test_size=0.5, random_state=seed
-    )
+    val_df, test_df = train_test_split(val_test_df, test_size=0.5, random_state=seed)
 
     train_ds = Dataset.from_pandas(train_df)
     val_ds = Dataset.from_pandas(val_df)
     test_ds = Dataset.from_pandas(test_df)
-    
+
     train_ds.set_format(type="torch")
     val_ds.set_format(type="torch")
     test_ds.set_format(type="torch")
-    
+
+    with open("3turns_test.pkl", "wb") as f:
+        pickle.dump(test_ds, f)
+
     return train_ds, val_ds, test_ds
 
 
@@ -100,12 +103,13 @@ def main(intent):
 
         sent_kwargs = {"top_k": None, "function_to_apply": "none", "batch_size": 16}
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-        wandb.init(
-            project=f"intent_lora_tuning_new_reward_model",
-            name=f"weighted_intent_lora_{config.model_name.split('/')[-1]}_{current_time}_{intent}_3turn_low_lr",
-        )
+        # wandb.init(
+        #     project=f"intent_lora_tuning_new_reward_model",
+        #     name=f"weighted_intent_lora_{config.model_name.split('/')[-1]}_{current_time}_{intent}_3turn_low_lr",
+        # )
 
         train_ds, val_ds, test_ds = build_dataset(config)
+        exit()
 
         peft_config = LoraConfig(
             task_type=TaskType.CAUSAL_LM,
@@ -160,7 +164,9 @@ def main(intent):
             "max_new_tokens": 128,
         }
 
-        for batch_num, batch in tqdm(enumerate(ppo_trainer.dataloader), total=len(ppo_trainer.dataloader)):
+        for batch_num, batch in tqdm(
+            enumerate(ppo_trainer.dataloader), total=len(ppo_trainer.dataloader)
+        ):
             query_tensors = batch["input_ids"]
 
             response_tensors = []
@@ -199,9 +205,13 @@ def main(intent):
                     val_query_len = len(val_query.squeeze())
                     val_response_tensor = val_response.squeeze()[val_query_len:]
                     val_response_text = tokenizer.decode(val_response_tensor)
-                    val_tokenized_response = reward_model_tokenizer.encode(val_response_text)
+                    val_tokenized_response = reward_model_tokenizer.encode(
+                        val_response_text
+                    )
                     if len(val_tokenized_response) > 512:
-                        val_response_text = reward_model_tokenizer.decode(val_tokenized_response[:500])
+                        val_response_text = reward_model_tokenizer.decode(
+                            val_tokenized_response[:500]
+                        )
                     val_pipe_output = emotion_pipe(val_response_text, **sent_kwargs)
                     for label_score in val_pipe_output:
                         if label_score["label"] == intent:
@@ -221,7 +231,9 @@ def main(intent):
             test_response_text = tokenizer.decode(test_response_tensor)
             test_tokenized_response = reward_model_tokenizer.encode(test_response_text)
             if len(test_tokenized_response) > 512:
-                test_response_text = reward_model_tokenizer.decode(test_tokenized_response[:500])
+                test_response_text = reward_model_tokenizer.decode(
+                    test_tokenized_response[:500]
+                )
             test_pipe_output = emotion_pipe(test_response_text, **sent_kwargs)
             for label_score in test_pipe_output:
                 if label_score["label"] == intent:
@@ -262,7 +274,7 @@ if __name__ == "__main__":
     ]
     # for intent in intent_list:
     #     main(intent)
-    
-    with Pool(processes=2) as pool:
+
+    with Pool(processes=1) as pool:
         pool.map(main, intent_list)
     send_slack_message("All training completed succesfully. (intent lora)")

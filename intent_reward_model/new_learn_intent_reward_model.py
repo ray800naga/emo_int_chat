@@ -81,6 +81,10 @@ def main(scheduler_name):
         train_dataset = Dataset.from_pandas(df_train)
         val_dataset = Dataset.from_pandas(df_val)
         test_dataset = Dataset.from_pandas(df_test)
+        
+        print(f"train DS len: {len(train_dataset)}")
+        print(f"val DS len: {len(val_dataset)}")
+        print(f"test DS len: {len(test_dataset)}")
 
         train_tokenized_dataset = train_dataset.map(tokenize_function, batched=True)
         val_tokenized_dataset = val_dataset.map(tokenize_function, batched=True)
@@ -198,6 +202,6 @@ def main(scheduler_name):
 if __name__ == "__main__":
     scheduler_name_list = ['linear', 'cosine', 'cosine_with_restarts', 'polynomial', 'constant_with_warmup', 'reduce_lr_on_plateau']
     
-    with Pool(processes=5) as pool:
+    with Pool(processes=1) as pool:
         pool.map(main, scheduler_name_list)
     send_slack_message("All training completed successfully.")

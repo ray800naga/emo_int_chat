@@ -18,9 +18,10 @@ df_3 = df.loc[three_turn_index]
 
 print(df_1)
 print(df_3)
+df_all = df
 
 conversation_lists = []
-for df_n in [df_1, df_3]:
+for df_n in [df_1, df_3, df_all]:
     # 'ID'でグループ化して '話者' と '発話' のカラムをまとめてリスト化
     grouped_df = df_n.groupby('ID').apply(lambda x: x[['話者', '発話']].to_dict('records')).reset_index(name='対話')
 
@@ -40,11 +41,9 @@ for df_n in [df_1, df_3]:
     conversation_list = grouped_df['対話'].tolist()
     conversation_lists.append(conversation_list)
 
-conversation_list_full = conversation_lists[0] + conversation_lists[1]
-print(conversation_list_full)
 # 結果を確認
-print("full")
-print(conversation_list_full[:5])  # 最初の5要素を確認
+print("all")
+print(conversation_lists[2][:5])  # 最初の5要素を確認
 print("1 turn")
 print(conversation_lists[0][:5])  # 最初の5要素を確認
 print("3 turns")
@@ -60,10 +59,14 @@ print(conversation_lists[1][:5])  # 最初の5要素を確認
 # with open('/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue.pkl', 'wb') as f:
 #     pickle.dump(conversation_list_full, f)
 
-with open('/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue_1turn.pkl', 'wb') as f:
-    pickle.dump(conversation_lists[0], f)
+# with open('/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue_1turn.pkl', 'wb') as f:
+#     pickle.dump(conversation_lists[0], f)
 
-with open('/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue_3turn.pkl', 'wb') as f:
-    pickle.dump(conversation_lists[1], f)
-    
+# with open('/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue_3turn.pkl', 'wb') as f:
+#     pickle.dump(conversation_lists[1], f)
+
+with open('/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue_all.pkl', 'wb') as f:
+    pickle.dump(conversation_lists[2], f)
+
+
 print("pkl file was saved.")
