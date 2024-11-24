@@ -7,8 +7,8 @@ import pandas as pd
 import matplotlib.font_manager as fm
 from matplotlib.ticker import FixedLocator
 
-model_name = "20240627_141942_bert-base-japanese-v3"
-checkpoint = "checkpoint-22785"
+model_name = "weighted_20241104_110732_bert-base-japanese-v3_reduce_lr_on_plateau"
+checkpoint = "checkpoint-68370"
 
 # labelデータの取得
 label_id_file_path = f"/workspace/Emotion_Intent_Chat/emo_int_chat/intent_reward_model/tuned_model/{model_name}/label_id.json"

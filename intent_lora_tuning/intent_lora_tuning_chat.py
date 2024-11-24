@@ -5,7 +5,7 @@ import pickle
 
 tqdm.pandas()
 from transformers import pipeline, AutoTokenizer
-from datasets import load_dataset, Dataset
+from datasets import load_dataset, Dataset, train_test_split
 from trl import PPOTrainer, PPOConfig, AutoModelForCausalLMWithValueHead
 import os
 import wandb
@@ -14,10 +14,10 @@ from peft import LoraConfig, TaskType
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 import json
+from sklearn.model_selection import train_test_split
 
 # random seed の設定
 seed = 0
-
 torch.manual_seed(seed)
 
 # Slack通知の設定
@@ -51,8 +51,8 @@ def build_dataset(config):
     # pickleの読み込み
     with open(
         # "/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue.pkl",
-        "/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue_1turn.pkl",
-        # "/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue_3turn.pkl",
+        # "/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue_1turn.pkl",
+        "/workspace/Emotion_Intent_Chat/JEmpatheticDialogue/JEmpatheticDialogue_3turn.pkl",
         "rb",
     ) as f:
         conversation_list = pickle.load(f)
@@ -93,8 +93,8 @@ def main(intent):
 
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
         wandb.init(
-            project=f"intent_lora_tuning",
-            name=f"intent_lora_{config.model_name.split('/')[-1]}_{current_time}_{intent}_1turn_low_lr",
+            project=f"intent_lora_tuning_new_reward_model",
+            name=f"intent_lora_{config.model_name.split('/')[-1]}_{current_time}_{intent}_3turn_low_lr",
         )
 
         dataset = build_dataset(config)
@@ -155,7 +155,7 @@ def main(intent):
             "max_new_tokens": 128,
         }
 
-        for batch in tqdm(ppo_trainer.dataloader):
+        for batch_num, batch in tqdm(enumerate(ppo_trainer.dataloader), total=len(ppo_trainer.dataloader)):
             query_tensors = batch["input_ids"]
 
             #### Get response from llm
@@ -189,49 +189,6 @@ def main(intent):
             #### Run PPO step
             stats = ppo_trainer.step(query_tensors, response_tensors, rewards)
             ppo_trainer.log_stats(stats, batch, rewards)
-
-        # #### get a batch from the dataset
-        # bs = 32
-        # game_data = dict()
-        # dataset.set_format("pandas")
-        # df_batch = dataset[:].sample(bs)
-        # game_data["query"] = df_batch["query"].tolist()
-        # query_tensors = df_batch["input_ids"].tolist()
-
-        # response_tensors_ref, response_tensors = [], []
-
-        # #### get response from gpt2 and gpt2_ref
-        # for i in range(bs):
-        # 	# gen_len = output_length_sampler()
-        # 	gen_len = 20
-        # 	output = ref_model.generate(
-        # 		torch.tensor(query_tensors[i]).unsqueeze(dim=0).to(device), max_new_tokens=gen_len, **gen_kwargs
-        # 	).squeeze()[-gen_len:]
-        # 	response_tensors_ref.append(output)
-        # 	output = lora_model.generate(
-        # 		torch.tensor(query_tensors[i]).unsqueeze(dim=0).to(device), max_new_tokens=gen_len, **gen_kwargs
-        # 	).squeeze()[-gen_len:]
-        # 	response_tensors.append(output)
-
-        # #### decode responses
-        # game_data["response (before)"] = [tokenizer.decode(response_tensors_ref[i]) for i in range(bs)]
-        # game_data["response (after)"] = [tokenizer.decode(response_tensors[i]) for i in range(bs)]
-
-        # #### sentiment analysis of query/response pairs before/after
-        # texts = [q + r for q, r in zip(game_data["query"], game_data["response (before)"])]
-        # game_data["rewards (before)"] = [output[intent_id]["score"] for output in emotion_pipe(texts, **sent_kwargs)]
-
-        # texts = [q + r for q, r in zip(game_data["query"], game_data["response (after)"])]
-        # game_data["rewards (after)"] = [output[intent_id]["score"] for output in emotion_pipe(texts, **sent_kwargs)]
-
-        # # store results in a dataframe
-        # df_results = pd.DataFrame(game_data)
-
-        # print("mean:")
-        # print(df_results[["rewards (before)", "rewards (after)"]].mean())
-        # print()
-        # print("median:")
-        # print(df_results[["rewards (before)", "rewards (after)"]].median())
 
         save_dir = f"/workspace/Emotion_Intent_Chat/emo_int_chat/intent_lora_tuning/tuned_model/intent_lora_{config.model_name.split('/')[-1]}_{current_time}_{intent}"
         os.makedirs(save_dir, exist_ok=True)
