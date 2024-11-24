@@ -132,7 +132,7 @@ def main(scheduler_name):
         output_dir = f'tuned_model/weighted_{current_time}_{model_name}_{scheduler_name}'
         training_args = TrainingArguments(
             output_dir=output_dir,
-            per_device_train_batch_size=8,
+            per_device_train_batch_size=16,
             num_train_epochs=30,
             evaluation_strategy="epoch",
             load_best_model_at_end=True,
@@ -140,7 +140,7 @@ def main(scheduler_name):
             greater_is_better=True,
             save_strategy='epoch',
             logging_strategy='epoch',
-            learning_rate=5e-7,
+            learning_rate=5e-6,
             warmup_ratio=0.05,
             report_to="wandb"
         )
@@ -198,6 +198,6 @@ def main(scheduler_name):
 if __name__ == "__main__":
     scheduler_name_list = ['linear', 'cosine', 'cosine_with_restarts', 'polynomial', 'constant_with_warmup', 'reduce_lr_on_plateau']
     
-    with Pool(processes=5) as pool:
+    with Pool(processes=1) as pool:
         pool.map(main, scheduler_name_list)
     send_slack_message("All training completed successfully.")
